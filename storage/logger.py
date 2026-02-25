@@ -22,6 +22,7 @@ class RunLog(Base):
     __tablename__ = "run_logs"
 
     run_id = Column(String, primary_key=True)
+    account_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Phase 1: Ingest
@@ -60,11 +61,15 @@ class RunLogger:
     def _session(self) -> Session:
         return self._session_factory()
 
-    def create_run(self) -> str:
-        """Create a new run and return its ID."""
+    def create_run(self, account_id: Optional[str] = None) -> str:
+        """Create a new run and return its ID.
+
+        Args:
+            account_id: Optional account UUID to associate with this run.
+        """
         run_id = str(uuid.uuid4())
         with self._session() as session:
-            session.add(RunLog(run_id=run_id))
+            session.add(RunLog(run_id=run_id, account_id=account_id))
             session.commit()
         return run_id
 
@@ -134,22 +139,33 @@ class RunLogger:
         with self._session() as session:
             return session.get(RunLog, run_id)
 
-    def get_all_runs(self) -> list[RunLog]:
-        """Fetch all runs ordered by creation date descending."""
-        with self._session() as session:
-            return (
-                session.query(RunLog)
-                .order_by(RunLog.created_at.desc())
-                .all()
-            )
+    def get_all_runs(self, account_id: Optional[str] = None) -> list[RunLog]:
+        """Fetch all runs ordered by creation date descending.
 
-    def get_past_run_summaries(self) -> list[PastRunSummary]:
-        """Get summaries of past runs for inclusion in the analysis prompt."""
+        Args:
+            account_id: If provided, filter to runs for this account only.
+        """
         with self._session() as session:
-            runs = (
+            query = session.query(RunLog)
+            if account_id is not None:
+                query = query.filter(RunLog.account_id == account_id)
+            return query.order_by(RunLog.created_at.desc()).all()
+
+    def get_past_run_summaries(self, account_id: Optional[str] = None) -> list[PastRunSummary]:
+        """Get summaries of past runs for inclusion in the analysis prompt.
+
+        Args:
+            account_id: If provided, filter to runs for this account only.
+        """
+        with self._session() as session:
+            query = (
                 session.query(RunLog)
                 .filter(RunLog.campaign_config_json.isnot(None))
-                .order_by(RunLog.created_at.desc())
+            )
+            if account_id is not None:
+                query = query.filter(RunLog.account_id == account_id)
+            runs = (
+                query.order_by(RunLog.created_at.desc())
                 .limit(10)
                 .all()
             )

@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 import typer
 
-import config
 from exceptions import BudgetCapError, StrategyError
 from main import _load_ad_set_overrides
 from models.campaign_config import CampaignConfig
@@ -54,13 +53,11 @@ class TestTryParse:
 
 class TestEnforceBudgetCap:
     def test_within_cap(self, sample_campaign_config):
-        with patch.object(config, "MAX_DAILY_BUDGET_USD", 500.0):
-            _enforce_budget_cap(sample_campaign_config)  # Should not raise
+        _enforce_budget_cap(sample_campaign_config, 500.0)  # Should not raise
 
     def test_campaign_budget_exceeds_cap(self, sample_campaign_config):
-        with patch.object(config, "MAX_DAILY_BUDGET_USD", 50.0):
-            with pytest.raises(BudgetCapError, match="exceeds cap"):
-                _enforce_budget_cap(sample_campaign_config)
+        with pytest.raises(BudgetCapError, match="exceeds cap"):
+            _enforce_budget_cap(sample_campaign_config, 50.0)
 
     def test_ad_set_budget_exceeds_cap(self):
         """Test ABO ad set budget exceeds cap."""
@@ -95,9 +92,8 @@ class TestEnforceBudgetCap:
             "reasoning": "Test",
         }
         campaign_config = CampaignConfig.model_validate(config_data)
-        with patch.object(config, "MAX_DAILY_BUDGET_USD", 500.0):
-            with pytest.raises(BudgetCapError, match="Expensive Set"):
-                _enforce_budget_cap(campaign_config)
+        with pytest.raises(BudgetCapError, match="Expensive Set"):
+            _enforce_budget_cap(campaign_config, 500.0)
 
 
 class TestRunStrategize:
@@ -120,20 +116,20 @@ class TestRunStrategize:
         logger = RunLogger(db_path=str(tmp_path / "test.db"))
         run_id = logger.create_run()
 
-        with patch.object(config, "MAX_DAILY_BUDGET_USD", 500.0):
-            from phases.strategize import run_strategize
+        from phases.strategize import run_strategize
 
-            result = run_strategize(
-                data=sample_ingested_data,
-                logger=logger,
-                run_id=run_id,
-                product_name="Test Product",
-                product_url="https://example.com",
-                product_description="A test product",
-                target_customer="Adults 25-55",
-                goal="maximize purchases",
-                budget=100.0,
-            )
+        result = run_strategize(
+            data=sample_ingested_data,
+            logger=logger,
+            run_id=run_id,
+            product_name="Test Product",
+            product_url="https://example.com",
+            product_description="A test product",
+            target_customer="Adults 25-55",
+            goal="maximize purchases",
+            budget=100.0,
+            max_daily_budget_usd=500.0,
+        )
 
         assert isinstance(result, CampaignConfig)
         assert result.campaign.name == sample_campaign_config.campaign.name
@@ -161,20 +157,20 @@ class TestRunStrategize:
         logger = RunLogger(db_path=str(tmp_path / "test.db"))
         run_id = logger.create_run()
 
-        with patch.object(config, "MAX_DAILY_BUDGET_USD", 500.0):
-            from phases.strategize import run_strategize
+        from phases.strategize import run_strategize
 
-            result = run_strategize(
-                data=sample_ingested_data,
-                logger=logger,
-                run_id=run_id,
-                product_name="Test Product",
-                product_url="https://example.com",
-                product_description="A test",
-                target_customer="Adults",
-                goal="purchases",
-                budget=100.0,
-            )
+        result = run_strategize(
+            data=sample_ingested_data,
+            logger=logger,
+            run_id=run_id,
+            product_name="Test Product",
+            product_url="https://example.com",
+            product_description="A test",
+            target_customer="Adults",
+            goal="purchases",
+            budget=100.0,
+            max_daily_budget_usd=500.0,
+        )
 
         assert isinstance(result, CampaignConfig)
         assert mock_client.messages.create.call_count == 2
@@ -196,21 +192,21 @@ class TestRunStrategize:
         logger = RunLogger(db_path=str(tmp_path / "test.db"))
         run_id = logger.create_run()
 
-        with patch.object(config, "MAX_DAILY_BUDGET_USD", 500.0):
-            from phases.strategize import run_strategize
+        from phases.strategize import run_strategize
 
-            with pytest.raises(StrategyError, match="failed to return valid JSON after retry"):
-                run_strategize(
-                    data=sample_ingested_data,
-                    logger=logger,
-                    run_id=run_id,
-                    product_name="Test",
-                    product_url="https://example.com",
-                    product_description="Test",
-                    target_customer="Adults",
-                    goal="purchases",
-                    budget=100.0,
-                )
+        with pytest.raises(StrategyError, match="failed to return valid JSON after retry"):
+            run_strategize(
+                data=sample_ingested_data,
+                logger=logger,
+                run_id=run_id,
+                product_name="Test",
+                product_url="https://example.com",
+                product_description="Test",
+                target_customer="Adults",
+                goal="purchases",
+                budget=100.0,
+                max_daily_budget_usd=500.0,
+            )
 
         assert mock_client.messages.create.call_count == 2
 
@@ -334,24 +330,24 @@ class TestAdSetOverrides:
 
         overrides = {"Interest Targeting": {"age_min": 30}}
 
-        with patch.object(config, "MAX_DAILY_BUDGET_USD", 500.0):
-            with patch("phases.strategize.build_user_prompt") as mock_build:
-                mock_build.return_value = "mocked prompt"
-                run_strategize(
-                    data=sample_ingested_data,
-                    logger=logger,
-                    run_id=run_id,
-                    product_name="Test",
-                    product_url="https://example.com",
-                    product_description="Test",
-                    target_customer="Adults",
-                    goal="sales",
-                    budget=100.0,
-                    ad_set_overrides=overrides,
-                )
-                mock_build.assert_called_once()
-                _, kwargs = mock_build.call_args
-                assert kwargs["ad_set_overrides"] == overrides
+        with patch("phases.strategize.build_user_prompt") as mock_build:
+            mock_build.return_value = "mocked prompt"
+            run_strategize(
+                data=sample_ingested_data,
+                logger=logger,
+                run_id=run_id,
+                product_name="Test",
+                product_url="https://example.com",
+                product_description="Test",
+                target_customer="Adults",
+                goal="sales",
+                budget=100.0,
+                max_daily_budget_usd=500.0,
+                ad_set_overrides=overrides,
+            )
+            mock_build.assert_called_once()
+            _, kwargs = mock_build.call_args
+            assert kwargs["ad_set_overrides"] == overrides
 
 
 class TestLoadAdSetOverrides:

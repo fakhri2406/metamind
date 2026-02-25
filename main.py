@@ -7,17 +7,31 @@ import tempfile
 from typing import Optional
 
 import typer
+from cryptography.fernet import Fernet
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
 import config
-from exceptions import BudgetCapError, MetaAPIError, SetupError, StrategyError
+from exceptions import (
+    BudgetCapError,
+    CredentialDecryptionError,
+    MetaAPIError,
+    SetupError,
+    StrategyError,
+)
 from models.campaign_config import CampaignConfig
 from phases.execute import run_execute
 from phases.ingest import run_ingest
 from phases.strategize import run_strategize
+from storage.accounts import (
+    create_account,
+    delete_account,
+    get_account,
+    list_accounts,
+)
 from storage.logger import RunLogger
+from storage.migrations import migrate
 from utils.meta_client import MetaClient
 
 app = typer.Typer(
@@ -25,6 +39,8 @@ app = typer.Typer(
     help="AI-powered Meta Ads automation agent",
     rich_markup_mode="rich",
 )
+accounts_app = typer.Typer(help="Manage Meta Ad Accounts")
+app.add_typer(accounts_app, name="accounts")
 console = Console()
 
 
@@ -56,6 +72,38 @@ def _load_ad_set_overrides(path: str) -> dict[str, dict]:
                 f"Ad set override for '{key}' must be an object, got: {type(value).__name__}"
             )
     return data
+
+
+def _load_account(account_id: str):
+    """Load and return an Account from the database.
+
+    Raises typer.Exit on failure.
+    """
+    try:
+        account = get_account(config.DB_PATH, config.ENCRYPTION_KEY, account_id)
+    except CredentialDecryptionError as e:
+        console.print(f"[bold red]Decryption Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+    if not account:
+        console.print(f"[bold red]Account not found:[/bold red] {account_id}")
+        raise typer.Exit(code=1)
+
+    if not account.is_active:
+        console.print(f"[bold red]Account is deleted:[/bold red] {account_id}")
+        raise typer.Exit(code=1)
+
+    return account
+
+
+def _build_client(account) -> MetaClient:
+    """Construct a MetaClient from an Account object."""
+    return MetaClient(
+        access_token=account.access_token,
+        app_id=account.app_id,
+        app_secret=account.app_secret,
+        ad_account_id=account.ad_account_id,
+    )
 
 
 def _human_approval_gate(campaign_config: CampaignConfig, logger: RunLogger, run_id: str) -> bool:
@@ -143,7 +191,139 @@ def _edit_config(campaign_config: CampaignConfig) -> Optional[CampaignConfig]:
 
 
 @app.command()
+def generate_key() -> None:
+    """Generate a new Fernet encryption key for METAMIND_ENCRYPTION_KEY."""
+    existing = os.getenv("METAMIND_ENCRYPTION_KEY", "")
+    if existing:
+        console.print(
+            "[yellow]Warning: METAMIND_ENCRYPTION_KEY is already set in your environment. "
+            "Changing it will make existing encrypted accounts unreadable.[/yellow]\n"
+        )
+
+    key = Fernet.generate_key().decode()
+    console.print(f"[bold green]Generated encryption key:[/bold green]\n\n  {key}\n")
+    console.print("Add this to your [bold].env[/bold] file as:")
+    console.print(f"  [cyan]METAMIND_ENCRYPTION_KEY={key}[/cyan]")
+
+
+@accounts_app.command("list")
+def accounts_list(
+    show_secrets: bool = typer.Option(False, "--show-secrets", help="Show full credentials"),
+) -> None:
+    """List all active accounts."""
+    migrate(config.DB_PATH)
+
+    try:
+        config.check_setup()
+    except SetupError as e:
+        console.print(f"[bold red]Setup Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+    try:
+        accts = list_accounts(config.DB_PATH, config.ENCRYPTION_KEY)
+    except CredentialDecryptionError as e:
+        console.print(f"[bold red]Decryption Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+    if not accts:
+        console.print("[yellow]No accounts found. Create one with: python main.py accounts create[/yellow]")
+        return
+
+    table = Table(title="Meta Ad Accounts")
+    table.add_column("ID", style="dim", max_width=36)
+    table.add_column("Name", style="white")
+    table.add_column("Ad Account ID", style="cyan")
+    table.add_column("Budget Cap", style="yellow")
+    table.add_column("Active", style="green")
+    if show_secrets:
+        table.add_column("Access Token", style="red")
+        table.add_column("App Secret", style="red")
+
+    for acct in accts:
+        row = [
+            acct.id,
+            acct.name,
+            acct.ad_account_id,
+            f"${acct.max_daily_budget_usd:.2f}",
+            "Yes" if acct.is_active else "No",
+        ]
+        if show_secrets:
+            row.append(acct.access_token)
+            row.append(acct.app_secret)
+        table.add_row(*row)
+
+    console.print(table)
+
+
+@accounts_app.command("create")
+def accounts_create() -> None:
+    """Create a new Meta Ad Account (interactive)."""
+    migrate(config.DB_PATH)
+
+    try:
+        config.check_setup()
+    except SetupError as e:
+        console.print(f"[bold red]Setup Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+    name = typer.prompt("Account name")
+    access_token = typer.prompt("Meta Access Token", hide_input=True)
+    ad_account_id = typer.prompt("Ad Account ID (act_XXXXXXXXX)")
+    app_id = typer.prompt("App ID")
+    app_secret = typer.prompt("App Secret", hide_input=True)
+    page_id = typer.prompt("Page ID")
+    max_budget = typer.prompt("Max Daily Budget (USD)", type=float)
+
+    if not ad_account_id.startswith("act_"):
+        console.print("[bold red]Ad Account ID must start with 'act_'[/bold red]")
+        raise typer.Exit(code=1)
+
+    if max_budget <= 0:
+        console.print("[bold red]Budget must be positive[/bold red]")
+        raise typer.Exit(code=1)
+
+    account = create_account(
+        db_path=config.DB_PATH,
+        encryption_key=config.ENCRYPTION_KEY,
+        name=name,
+        access_token=access_token,
+        ad_account_id=ad_account_id,
+        app_id=app_id,
+        app_secret=app_secret,
+        page_id=page_id,
+        max_daily_budget_usd=max_budget,
+    )
+
+    console.print(f"\n[bold green]Account created:[/bold green] {account.name}")
+    console.print(f"[dim]ID: {account.id}[/dim]")
+
+
+@accounts_app.command("delete")
+def accounts_delete(
+    account_id: str = typer.Option(..., "--account-id", help="Account UUID to delete"),
+) -> None:
+    """Soft-delete an account."""
+    migrate(config.DB_PATH)
+
+    try:
+        config.check_setup()
+    except SetupError as e:
+        console.print(f"[bold red]Setup Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+    account = _load_account(account_id)
+    confirm = typer.confirm(f"Delete account '{account.name}' ({account.ad_account_id})?")
+    if not confirm:
+        console.print("[yellow]Cancelled.[/yellow]")
+        raise typer.Exit(code=0)
+
+    delete_account(config.DB_PATH, account_id)
+    console.print(f"[green]Account '{account.name}' deleted (soft).[/green]")
+
+
+@app.command()
 def run(
+        account_id: str = typer.Option(..., "--account-id", help="Account UUID to use"),
         product_name: str = typer.Option(..., "--product-name", help="Name of the product/service"),
         product_url: str = typer.Option(..., "--product-url", help="Product landing page URL"),
         product_description: str = typer.Option(..., "--product-description", help="Product description"),
@@ -158,23 +338,28 @@ def run(
         dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run", help="Dry run (default: True)"),
 ) -> None:
     """Run the full pipeline: ingest → strategize → approve → execute."""
+    migrate(config.DB_PATH)
+
     try:
         config.check_setup()
     except SetupError as e:
         console.print(f"[bold red]Setup Error:[/bold red] {e}")
         raise typer.Exit(code=1)
 
+    account = _load_account(account_id)
+
     overrides_dict = None
     if ad_set_overrides:
         overrides_dict = _load_ad_set_overrides(ad_set_overrides)
 
     logger = RunLogger()
-    run_id = logger.create_run()
-    console.print(f"[dim]Run ID: {run_id}[/dim]\n")
+    run_id = logger.create_run(account_id=account.id)
+    console.print(f"[dim]Run ID: {run_id}[/dim]")
+    console.print(f"[dim]Account: {account.name} ({account.ad_account_id})[/dim]\n")
 
     try:
         # Phase 1: Ingest
-        client = MetaClient()
+        client = _build_client(account)
         data = run_ingest(client, logger, run_id)
 
         # Phase 2: Strategize
@@ -188,6 +373,7 @@ def run(
             target_customer=target_customer,
             goal=goal,
             budget=budget,
+            max_daily_budget_usd=account.max_daily_budget_usd,
             aov=aov,
             ads_per_ad_set=ads_per_ad_set,
             ad_set_overrides=overrides_dict,
@@ -203,18 +389,28 @@ def run(
             logger.log_approval(run_id, approved=True)
 
         # Phase 3: Execute
-        run_execute(client, campaign_config, logger, run_id, dry_run=dry_run)
+        run_execute(
+            client, campaign_config, logger, run_id,
+            dry_run=dry_run, page_id=account.page_id,
+        )
 
+    except CredentialDecryptionError as e:
+        console.print(f"[bold red]Decryption Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
     except (StrategyError, BudgetCapError, MetaAPIError) as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
         raise typer.Exit(code=1)
 
 
 @app.command()
-def history() -> None:
+def history(
+    account_id: Optional[str] = typer.Option(None, "--account-id", help="Filter by account UUID"),
+) -> None:
     """View past run history."""
+    migrate(config.DB_PATH)
+
     logger = RunLogger()
-    runs = logger.get_all_runs()
+    runs = logger.get_all_runs(account_id=account_id)
 
     if not runs:
         console.print("[yellow]No runs found.[/yellow]")
@@ -270,6 +466,7 @@ def validate_config(
 
 @app.command()
 def optimize(
+        account_id: str = typer.Option(..., "--account-id", help="Account UUID to use"),
         run_id: str = typer.Option(..., "--run-id", help="Run ID of a past campaign to optimize"),
         budget: Optional[float] = typer.Option(None, "--budget", help="New daily budget (optional)"),
         ads_per_ad_set: Optional[int] = typer.Option(None, "--ads-per-ad-set",
@@ -282,11 +479,15 @@ def optimize(
 
     Re-ingests current data, passes past config + reasoning as additional context to Claude.
     """
+    migrate(config.DB_PATH)
+
     try:
         config.check_setup()
     except SetupError as e:
         console.print(f"[bold red]Setup Error:[/bold red] {e}")
         raise typer.Exit(code=1)
+
+    account = _load_account(account_id)
 
     overrides_dict = None
     if ad_set_overrides:
@@ -306,12 +507,13 @@ def optimize(
     # Parse past config to extract product info
     past_config = CampaignConfig.model_validate_json(past_run.campaign_config_json)
 
-    new_run_id = logger.create_run()
+    new_run_id = logger.create_run(account_id=account.id)
     console.print(f"[dim]Optimization Run ID: {new_run_id}[/dim]")
+    console.print(f"[dim]Account: {account.name} ({account.ad_account_id})[/dim]")
     console.print(f"[dim]Based on past run: {run_id}[/dim]\n")
 
     try:
-        client = MetaClient()
+        client = _build_client(account)
         data = run_ingest(client, logger, new_run_id)
 
         # Use budget from past run or override
@@ -335,6 +537,7 @@ def optimize(
             target_customer="See past campaign data for targeting insights",
             goal=f"Optimize and improve upon previous campaign. {past_config.optimization_notes}",
             budget=effective_budget,
+            max_daily_budget_usd=account.max_daily_budget_usd,
             ads_per_ad_set=ads_per_ad_set,
             ad_set_overrides=overrides_dict,
         )
@@ -347,8 +550,14 @@ def optimize(
         else:
             logger.log_approval(new_run_id, approved=True)
 
-        run_execute(client, campaign_config, logger, new_run_id, dry_run=dry_run)
+        run_execute(
+            client, campaign_config, logger, new_run_id,
+            dry_run=dry_run, page_id=account.page_id,
+        )
 
+    except CredentialDecryptionError as e:
+        console.print(f"[bold red]Decryption Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
     except (StrategyError, BudgetCapError, MetaAPIError) as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
         raise typer.Exit(code=1)

@@ -15,6 +15,8 @@ The system has three phases:
 
 There is always a human approval gate between Phase 2 and Phase 3. Campaigns are always created with `status=PAUSED` and never auto-activated.
 
+**Multi-account support:** Multiple Meta Ad Accounts are stored in SQLite with encrypted credentials. Every pipeline run is scoped to a specific Account via `--account-id` (CLI) or account selector (UI). Credentials are encrypted at rest using Fernet symmetric encryption.
+
 ---
 
 ## Project Structure
@@ -47,7 +49,10 @@ metamind/                          # This folder (project root)
 │
 ├── storage/
 │   ├── __init__.py
-│   └── logger.py                  # SQLAlchemy + SQLite logger for all runs
+│   ├── logger.py                  # SQLAlchemy + SQLite logger for all runs
+│   ├── accounts.py                # Account model + CRUD (encrypted credentials)
+│   ├── encryption.py              # Fernet encrypt/decrypt functions
+│   └── migrations.py              # Startup migration (accounts table, account_id column)
 │
 ├── utils/
 │   ├── __init__.py
@@ -61,11 +66,13 @@ metamind/                          # This folder (project root)
 │   ├── run.sh                     # Launch script: cd to root, streamlit run ui/app.py
 │   ├── components/
 │   │   ├── __init__.py
+│   │   ├── account_selector.py    # Reusable account selector dropdown
 │   │   ├── config_viewer.py       # Reusable CampaignConfig display cards
 │   │   ├── json_editor.py         # Editable JSON text_area + Pydantic validation
 │   │   └── progress.py            # Three-phase stepper indicator
 │   └── pages/
 │       ├── __init__.py
+│       ├── accounts.py            # Account management: create, edit, delete
 │       ├── new_campaign.py        # Campaign form → Phase 1 + 2 → approval
 │       ├── approval.py            # State machine: idle|generated|approved|rejected
 │       ├── history.py             # Run history table + expandable details
@@ -82,7 +89,8 @@ metamind/                          # This folder (project root)
     ├── conftest.py
     ├── test_models.py
     ├── test_strategize.py
-    └── test_ingest.py
+    ├── test_ingest.py
+    └── test_accounts.py           # Tests for accounts CRUD, encryption, migrations
 ```
 
 ---
@@ -98,6 +106,7 @@ metamind/                          # This folder (project root)
 | AI | Anthropic Python SDK |
 | Data validation | Pydantic v2 |
 | Storage | SQLAlchemy + SQLite |
+| Encryption | cryptography (Fernet) |
 | Testing | pytest |
 | Linting | ruff |
 
@@ -109,16 +118,13 @@ All loaded in `config.py` via `python-dotenv`. See `.env` for the current values
 
 | Variable | Purpose |
 |---|---|
-| `META_ACCESS_TOKEN` | Meta System User long-lived access token |
-| `META_AD_ACCOUNT_ID` | Format: `act_XXXXXXXXX` |
-| `META_APP_ID` | Meta Developer App ID |
-| `META_APP_SECRET` | Meta Developer App Secret |
-| `META_PAGE_ID` | Meta Page ID (required for creative creation) |
 | `ANTHROPIC_API_KEY` | Anthropic API key |
-| `MAX_DAILY_BUDGET_USD` | Hard cap — Claude cannot exceed this regardless of recommendation |
 | `REQUIRE_HUMAN_APPROVAL` | `true` / `false` — gates execution after strategy |
+| `METAMIND_ENCRYPTION_KEY` | Fernet key for encrypting account credentials. Generate with `python main.py generate-key` |
 
-**Critical:** `MAX_DAILY_BUDGET_USD` is enforced in code in `phases/strategize.py`, not by prompt. Never remove this check.
+Meta credentials (`META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`, `META_APP_ID`, `META_APP_SECRET`, `META_PAGE_ID`) and `MAX_DAILY_BUDGET_USD` are now stored **per-account** in the SQLite database with sensitive fields encrypted. They are no longer environment variables.
+
+**Critical:** `max_daily_budget_usd` is enforced in code in `phases/strategize.py` (passed as a parameter from the account), not by prompt. Never remove this check.
 
 ---
 
@@ -177,11 +183,19 @@ If Claude returns anything other than this structure, `phases/strategize.py` ret
 
 ## Data Flow
 ```
-User runs: python main.py run [args]
+User runs: python main.py run --account-id <UUID> [args]
               │
               ▼
       config.check_setup()
-      Validate env vars
+      Validate env vars (ANTHROPIC_API_KEY, ENCRYPTION_KEY)
+              │
+              ▼
+      migrate(DB_PATH)
+      Run startup migrations
+              │
+              ▼
+      Load Account from DB (decrypt credentials)
+      Construct MetaClient(account.access_token, ...)
               │
               ▼
       Load --ad-set-overrides file (if provided)
@@ -201,8 +215,8 @@ User runs: python main.py run [args]
       (includes --ads-per-ad-set and --ad-set-overrides if provided)
     - Calls Anthropic API (claude-opus-4-6, temp=0)
     - Parses and validates JSON → CampaignConfig
-    - Checks budget cap
-    - Logs to SQLite
+    - Checks budget cap (account.max_daily_budget_usd)
+    - Logs to SQLite (with account_id)
     → Returns CampaignConfig
               │
               ▼
@@ -219,7 +233,7 @@ User runs: python main.py run [args]
         1. Create Campaign (status=PAUSED)
         2. Resolve interest names → Meta interest IDs via TargetingSearch
         3. Create Ad Sets (status=PAUSED)
-        4. Create Ad Creatives
+        4. Create Ad Creatives (using account.page_id)
         5. Create Ads (status=PAUSED)
     - Logs all created IDs to SQLite
     - Prints Ads Manager link
@@ -231,13 +245,13 @@ User runs: python main.py run [args]
 
 1. **Campaigns are always created as `status=PAUSED`.** Never set status to ACTIVE during creation under any circumstances.
 
-2. **The budget cap is enforced in code, not by prompt.** `config.MAX_DAILY_BUDGET_USD` must be checked in `strategize.py` before execution proceeds. If the check is ever removed or bypassed, the system is broken.
+2. **The budget cap is enforced in code, not by prompt.** `account.max_daily_budget_usd` must be checked in `strategize.py` before execution proceeds. If the check is ever removed or bypassed, the system is broken.
 
 3. **Default to `--dry-run=True`.** Phase 3 must default to dry-run. A user must explicitly pass `--no-dry-run` to make real API calls.
 
-4. **Never store credentials.** `.env` is gitignored. Never hardcode tokens, app secrets, or API keys anywhere in source code.
+4. **Never store credentials in plaintext.** Account credentials are encrypted with Fernet in SQLite. `.env` is gitignored. Never hardcode tokens, app secrets, or API keys anywhere in source code.
 
-5. **Log everything.** Every Claude response, every API call result, every run — logged to SQLite. Never skip logging even if execution fails.
+5. **Log everything.** Every Claude response, every API call result, every run — logged to SQLite with `account_id`. Never skip logging even if execution fails.
 
 6. **Pydantic validation is the contract.** If `CampaignConfig` validation fails, raise an error. Never manually patch or coerce bad data to make it fit.
 
@@ -255,9 +269,10 @@ All custom exceptions live in a top-level `exceptions.py` file:
 |---|---|
 | `MetaAPIError` | Any Meta API call fails after retries |
 | `StrategyError` | Claude returns invalid/unparseable JSON after retry |
-| `BudgetCapError` | Claude's recommended budget exceeds `MAX_DAILY_BUDGET_USD` |
+| `BudgetCapError` | Claude's recommended budget exceeds account's `max_daily_budget_usd` |
 | `ValidationError` | Pydantic model validation fails (use Pydantic's built-in) |
 | `SetupError` | Missing env vars at startup |
+| `CredentialDecryptionError` | Decryption fails (wrong encryption key, corrupted data) |
 
 Never use bare `except:`. Always catch specific exceptions and log before re-raising.
 
@@ -290,8 +305,9 @@ raw_text = response.content[0].text
 - **SDK:** `facebook_business` (official)
 - **API Version:** pin to `v21.0` in all calls — do not use "latest"
 - **Rate limits:** Retry on error codes `17` (rate limit) and `80004` with exponential backoff (3 attempts max)
-- **Ad Account ID:** always in format `act_XXXXXXXXX` — stored in config, never hardcoded
+- **Ad Account ID:** always in format `act_XXXXXXXXX` — stored per-account in DB, never hardcoded
 - **Currency:** Meta's API accepts budget in **cents of the account's currency**. Always convert: `int(usd_amount * 100)`. This conversion must happen in `execute.py`, not in the models.
+- **MetaClient:** Initialized with account credentials as constructor params: `MetaClient(access_token, app_id, app_secret, ad_account_id)`
 
 ---
 
@@ -301,36 +317,47 @@ raw_text = response.content[0].text
 - Tests live in `/tests/`. Run with `make test`.
 - `conftest.py` provides shared fixtures: `sample_ingested_data`, `sample_campaign_config`, `sample_campaign_config_dict`.
 - Test the models thoroughly — they are the contract between Claude and the Meta API.
-- Test error paths: invalid JSON from Claude, budget cap exceeded, Meta API failure.
+- Test error paths: invalid JSON from Claude, budget cap exceeded, Meta API failure, decryption failure.
 
 ---
 
 ## CLI Commands
 ```bash
+# Generate an encryption key (first-time setup)
+python main.py generate-key
+
+# Account management
+python main.py accounts create                        # Interactive prompts
+python main.py accounts list                           # Show accounts (masked secrets)
+python main.py accounts list --show-secrets            # Show full credentials
+python main.py accounts delete --account-id <UUID>     # Soft-delete
+
 # Full pipeline (dry-run by default)
-python main.py run --product-name "X" --product-url "https://..." \
+python main.py run --account-id <UUID> \
+  --product-name "X" --product-url "https://..." \
   --product-description "..." --target-customer "..." \
   --goal "maximize purchases" --budget 100 --aov 65
 
 # Specify number of ads per ad set
-python main.py run [args] --ads-per-ad-set 3
+python main.py run --account-id <UUID> [args] --ads-per-ad-set 3
 
 # Use per-ad-set overrides from a JSON file
-python main.py run [args] --ad-set-overrides path/to/overrides.json
+python main.py run --account-id <UUID> [args] --ad-set-overrides path/to/overrides.json
 
 # Full pipeline, execute for real
-python main.py run [args] --no-dry-run
+python main.py run --account-id <UUID> [args] --no-dry-run
 
-# View run history
+# View run history (all accounts or filtered)
 python main.py history
+python main.py history --account-id <UUID>
 
 # Validate a campaign config JSON file
 python main.py validate-config path/to/config.json
 
 # Optimize an existing campaign from a past run
-python main.py optimize --run-id <UUID>
-python main.py optimize --run-id <UUID> --budget 150 --ads-per-ad-set 2
-python main.py optimize --run-id <UUID> --ad-set-overrides path/to/overrides.json
+python main.py optimize --account-id <UUID> --run-id <UUID>
+python main.py optimize --account-id <UUID> --run-id <UUID> --budget 150 --ads-per-ad-set 2
+python main.py optimize --account-id <UUID> --run-id <UUID> --ad-set-overrides path/to/overrides.json
 ```
 
 ---
@@ -342,16 +369,19 @@ The Streamlit UI is an alternative to the CLI, providing the same pipeline throu
 **Launch:** `bash ui/run.sh` (or `streamlit run ui/app.py` from project root)
 
 **Pages:**
-- **New Campaign** — Form with all `run` command parameters. Runs Phase 1 + 2 on submit, navigates to approval.
-- **Review & Approve** — Displays Claude's reasoning, campaign summary, and a JSON editor. State machine: idle → generated → approved/rejected. Approve triggers Phase 3.
-- **Run History** — Table of all past runs from SQLite. Expand to see config, reasoning, execution log. "Optimize This Run" button navigates to optimize page.
-- **Optimize** — Select a past run, set new budget/overrides, re-run Phase 1 + 2 with optimization context.
+- **Accounts** — Create, edit, and soft-delete Meta Ad Accounts. Sensitive fields (access token, app secret) are encrypted at rest. First page in navigation.
+- **New Campaign** — Account selector at top, then form with all `run` command parameters. Runs Phase 1 + 2 on submit, navigates to approval.
+- **Review & Approve** — Account selector, displays Claude's reasoning, campaign summary, and a JSON editor. State machine: idle → generated → approved/rejected. Approve triggers Phase 3.
+- **Run History** — Account selector with "show all accounts" toggle. Table of past runs from SQLite. Expand to see config, reasoning, execution log. "Optimize This Run" button navigates to optimize page.
+- **Optimize** — Account selector, select a past run, set new budget/overrides, re-run Phase 1 + 2 with optimization context.
 
-**Session state:** All keys prefixed `mm_` (e.g., `mm_campaign_config`, `mm_approval_state`, `mm_dry_run`). Managed in `ui/state.py`.
+**Account selector:** Reusable component in `ui/components/account_selector.py`. Persists selection in `st.session_state["mm_active_account_id"]`. Called at top of new_campaign, approval, history, and optimize pages.
+
+**Session state:** All keys prefixed `mm_` (e.g., `mm_campaign_config`, `mm_approval_state`, `mm_dry_run`, `mm_active_account_id`). Managed in `ui/state.py`.
 
 **Styling:** Custom CSS in `ui/styles.py` (DM Sans font, JetBrains Mono for code). Theme config in `.streamlit/config.toml` (dark mode, `#2845D6` primary color).
 
-**Key rules carry over from CLI:** Dry-run defaults to `True`, campaigns always `PAUSED`, budget cap enforced, all phase errors caught and displayed inline (never crash the app).
+**Key rules carry over from CLI:** Dry-run defaults to `True`, campaigns always `PAUSED`, budget cap enforced per-account, all phase errors caught and displayed inline (never crash the app).
 
 ---
 
@@ -382,6 +412,20 @@ The `--ad-set-overrides` option accepts a path to a JSON file with per-ad-set in
 **Precedence:** Override values take precedence over campaign-level defaults. Fields not specified in an override use campaign defaults. This is communicated to Claude via rule 13 in `prompts/system_prompt.txt`.
 
 Available on both `run` and `optimize` commands.
+
+---
+
+## Multi-Account Architecture
+
+**Storage:** Accounts are stored in the `accounts` table in the same SQLite database as run logs. Sensitive fields (`access_token`, `app_secret`) are encrypted with Fernet symmetric encryption. Plaintext fields (`ad_account_id`, `app_id`, `page_id`) are stored unencrypted.
+
+**Encryption key:** A single Fernet key (`METAMIND_ENCRYPTION_KEY` in `.env`) encrypts/decrypts all account credentials. Generated via `python main.py generate-key`. Changing the key invalidates all stored credentials.
+
+**CRUD:** `storage/accounts.py` provides `create_account`, `get_account`, `list_accounts`, `update_account`, `delete_account`. All functions accept `db_path` and `encryption_key` as params (no global state). Returned accounts have sensitive fields already decrypted.
+
+**Migration:** `storage/migrations.py` runs on every startup (idempotent). Creates the `accounts` table, adds `account_id` column to `run_logs`, and backfills pre-existing rows with a Legacy placeholder account.
+
+**Pipeline scoping:** Every `run_logs` row has an `account_id` foreign key. History can be filtered by account. The `MetaClient` is constructed with account credentials at runtime.
 
 ---
 
@@ -420,7 +464,7 @@ Available on both `run` and `optimize` commands.
 - **Creative assets:** Phase 3 currently uses a placeholder image hash for ad creatives. Real implementation needs image upload via `/act_{id}/adimages` before creative creation. This is the main gap in the current build.
 - **Carousel and video formats:** AdConfig supports these format types but `execute.py` only fully implements `single_image`. Other formats are stubbed with warnings.
 - **Feedback loop performance data:** `optimize` command pulls Claude's past configs from the logger, but live campaign performance (post-launch ROAS) must be manually fetched and passed in until automated polling is built.
-- **Multi-account support:** Config currently handles one ad account at a time. Multi-account support requires refactoring `config.py` and `MetaClient` to accept account ID as a runtime parameter.
+- **Key rotation:** Encryption key rotation requires decrypting all accounts with the old key and re-encrypting with the new key. A helper command for this is not yet implemented (hook point marked in `storage/encryption.py`).
 
 ---
 
@@ -438,3 +482,4 @@ Available on both `run` and `optimize` commands.
 | Custom Audience | Audience built from your own data (pixel, customer list, etc.) |
 | TargetingSearch | Meta API endpoint to resolve interest names to targeting IDs |
 | Dry Run | Phase 3 execution mode that prints actions without making API calls |
+| Fernet | Symmetric encryption scheme from the `cryptography` library (AES-128-CBC + HMAC-SHA256) |

@@ -15,3 +15,7 @@ class BudgetCapError(Exception):
 
 class SetupError(Exception):
     """Raised when required environment variables are missing at startup."""
+
+
+class CredentialDecryptionError(Exception):
+    """Raised when decryption fails (wrong key, corrupted data)."""

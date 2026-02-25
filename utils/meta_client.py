@@ -24,14 +24,34 @@ _RETRYABLE_ERROR_CODES = {17, 80004}
 class MetaClient:
     """Wrapper around the Meta Marketing API with automatic retry on rate limits."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        access_token: str,
+        app_id: str,
+        app_secret: str,
+        ad_account_id: str,
+    ) -> None:
+        """Initialize the Meta client with account credentials.
+
+        Args:
+            access_token: Meta System User long-lived access token.
+            app_id: Meta Developer App ID.
+            app_secret: Meta Developer App Secret.
+            ad_account_id: Meta Ad Account ID (format: act_XXXXXXXXX).
+        """
         FacebookAdsApi.init(
-            app_id=config.META_APP_ID,
-            app_secret=config.META_APP_SECRET,
-            access_token=config.META_ACCESS_TOKEN,
+            app_id=app_id,
+            app_secret=app_secret,
+            access_token=access_token,
             api_version=config.META_API_VERSION,
         )
-        self._account = AdAccount(config.META_AD_ACCOUNT_ID)
+        self._ad_account_id = ad_account_id
+        self._account = AdAccount(ad_account_id)
+
+    @property
+    def ad_account_id(self) -> str:
+        """Return the ad account ID."""
+        return self._ad_account_id
 
     def _retry_on_rate_limit(self, func: Any, *args: Any, **kwargs: Any) -> Any:
         """Execute a function with exponential backoff retry on rate limit errors."""
@@ -66,7 +86,7 @@ class MetaClient:
         ]
         result = self._retry_on_rate_limit(self._account.api_get, fields=fields)
         return {
-            "account_id": result.get("account_id", config.META_AD_ACCOUNT_ID),
+            "account_id": result.get("account_id", self._ad_account_id),
             "name": result.get("name", ""),
             "currency": result.get("currency", "USD"),
             "timezone": result.get("timezone_name", ""),

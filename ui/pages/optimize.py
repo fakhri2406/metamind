@@ -6,12 +6,12 @@ import json
 
 import streamlit as st
 
-import config
-from exceptions import BudgetCapError, MetaAPIError, SetupError, StrategyError
+from exceptions import BudgetCapError, CredentialDecryptionError, MetaAPIError, SetupError, StrategyError
 from models.campaign_config import CampaignConfig
 from phases.ingest import run_ingest
 from phases.strategize import run_strategize
 from storage.logger import RunLogger
+from ui.components.account_selector import render_account_selector
 from ui.state import init_state, reset_pipeline, set_config, set_error
 from utils.meta_client import MetaClient
 
@@ -25,9 +25,14 @@ if not st.session_state["mm_setup_ok"]:
     st.error(f"Setup Error: {msg}")
     st.stop()
 
+# Account selector
+account = render_account_selector()
+if account is None:
+    st.stop()
+
 # Fetch past runs
 logger = RunLogger()
-raw_runs = logger.get_all_runs()
+raw_runs = logger.get_all_runs(account_id=account.id)
 
 # Filter to runs that have a campaign config
 runs: list[dict] = []
@@ -161,13 +166,18 @@ if submitted:
 
     try:
         opt_logger = RunLogger()
-        run_id = opt_logger.create_run()
+        run_id = opt_logger.create_run(account_id=account.id)
         st.session_state["mm_run_id"] = run_id
 
         with st.status("Running optimization pipeline...", expanded=True) as status:
             # Phase 1
             st.write("Ingesting current account data...")
-            client = MetaClient()
+            client = MetaClient(
+                access_token=account.access_token,
+                app_id=account.app_id,
+                app_secret=account.app_secret,
+                ad_account_id=account.ad_account_id,
+            )
             ingested_data = run_ingest(client, opt_logger, run_id)
             st.session_state["mm_ingested_data"] = ingested_data
 
@@ -183,6 +193,7 @@ if submitted:
                 target_customer="",
                 goal=goal,
                 budget=new_budget,
+                max_daily_budget_usd=account.max_daily_budget_usd,
                 ads_per_ad_set=ads_per_ad_set,
                 ad_set_overrides=ad_set_overrides,
             )
@@ -197,6 +208,9 @@ if submitted:
     except SetupError as e:
         st.error(f"Setup Error: {e}")
         set_error(e)
+    except CredentialDecryptionError as e:
+        st.error(f"Credential Error: {e}")
+        set_error(e)
     except MetaAPIError as e:
         st.error(f"Meta API Error: {e}")
         set_error(e)
@@ -204,7 +218,7 @@ if submitted:
         st.error(f"Strategy Error: {e}")
         set_error(e)
     except BudgetCapError as e:
-        st.error(f"Budget exceeds cap of ${config.MAX_DAILY_BUDGET_USD}: {e}")
+        st.error(f"Budget exceeds cap of ${account.max_daily_budget_usd:.2f}: {e}")
         set_error(e)
     except Exception as e:
         st.error(f"Unexpected error: {e}")

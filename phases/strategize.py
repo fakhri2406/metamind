@@ -64,18 +64,19 @@ def _try_parse(raw_text: str) -> CampaignConfig:
         raise StrategyError(f"Validation failed: {e}") from e
 
 
-def _enforce_budget_cap(campaign_config: CampaignConfig) -> None:
-    """Enforce the budget cap from config.
+def _enforce_budget_cap(campaign_config: CampaignConfig, budget_cap: float) -> None:
+    """Enforce the budget cap.
 
     Checks both campaign-level budget and individual ad set budgets (for ABO).
 
     Args:
         campaign_config: The validated campaign config.
+        budget_cap: Maximum allowed daily budget in USD.
 
     Raises:
-        BudgetCapError: If any budget exceeds MAX_DAILY_BUDGET_USD.
+        BudgetCapError: If any budget exceeds the cap.
     """
-    cap = config.MAX_DAILY_BUDGET_USD
+    cap = budget_cap
 
     if campaign_config.campaign.budget_daily_usd > cap:
         raise BudgetCapError(
@@ -101,6 +102,7 @@ def run_strategize(
         target_customer: str,
         goal: str,
         budget: float,
+        max_daily_budget_usd: float,
         aov: float | None = None,
         ads_per_ad_set: int | None = None,
         ad_set_overrides: dict[str, dict] | None = None,
@@ -117,6 +119,7 @@ def run_strategize(
         target_customer: Target customer profile.
         goal: Campaign goal.
         budget: Daily budget in USD.
+        max_daily_budget_usd: Budget cap for this account.
         aov: Average order value (optional).
         ads_per_ad_set: Number of ads to create per ad set (optional).
         ad_set_overrides: Per-ad-set configuration overrides (optional).
@@ -201,7 +204,7 @@ def run_strategize(
             ) from second_error
 
     # Enforce budget cap (in code, not prompt)
-    _enforce_budget_cap(campaign_config)
+    _enforce_budget_cap(campaign_config, max_daily_budget_usd)
 
     # Log successful strategy
     logger.log_strategy(

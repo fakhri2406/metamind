@@ -30,6 +30,17 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 # Initialize session state
 init_state()
 
+# Run migration on startup
+if not st.session_state.get("mm_migration_done"):
+    try:
+        import config
+        from storage.migrations import migrate
+
+        migrate(config.DB_PATH)
+        st.session_state["mm_migration_done"] = True
+    except Exception:
+        st.session_state["mm_migration_done"] = True  # Don't block on migration failure
+
 # Run setup check once
 if not st.session_state.get("mm_setup_checked"):
     try:
@@ -54,6 +65,7 @@ st.logo(
 
 # Navigation
 pages = [
+    st.Page("pages/accounts.py", title="Accounts", icon=":material/manage_accounts:"),
     st.Page("pages/new_campaign.py", title="New Campaign", icon=":material/add_circle:"),
     st.Page("pages/approval.py", title="Review & Approve", icon=":material/check_circle:"),
     st.Page("pages/history.py", title="Run History", icon=":material/history:"),

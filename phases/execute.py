@@ -5,7 +5,6 @@ from typing import Any
 from rich.console import Console
 from rich.table import Table
 
-import config
 from exceptions import MetaAPIError
 from models.campaign_config import (
     AdFormat,
@@ -332,6 +331,7 @@ def _execute_real(
         campaign_config: CampaignConfig,
         logger: RunLogger,
         run_id: str,
+        page_id: str,
 ) -> None:
     """Execute real API calls to create the campaign."""
     console.print("\n[bold red]LIVE EXECUTION — Creating real campaigns[/bold red]\n")
@@ -360,7 +360,6 @@ def _execute_real(
 
         # Step 4: Create creatives and ads
         ad_ids: list[str] = []
-        page_id = config.META_PAGE_ID
         for ad in campaign_config.ads:
             console.print(f"  Creating creative for ad: {ad.name}...")
             creative_params = _build_creative_params(ad, page_id)
@@ -387,7 +386,7 @@ def _execute_real(
         )
 
         # Print Ads Manager link
-        account_id = config.META_AD_ACCOUNT_ID.replace("act_", "")
+        account_id = client.ad_account_id.replace("act_", "")
         console.print(
             "\n[bold green]All entities created successfully (status=PAUSED).[/bold green]"
         )
@@ -408,6 +407,7 @@ def run_execute(
         logger: RunLogger,
         run_id: str,
         dry_run: bool = True,
+        page_id: str = "",
 ) -> None:
     """Run Phase 3: Create campaign entities via Meta API.
 
@@ -417,6 +417,7 @@ def run_execute(
         logger: RunLogger for persisting results.
         run_id: Current run ID.
         dry_run: If True (default), only print what would be created.
+        page_id: Meta Page ID for creative creation.
     """
     console.print("[bold blue]Phase 3: Executing campaign creation...[/bold blue]")
 
@@ -427,6 +428,6 @@ def run_execute(
             "\n[bold yellow]Dry run complete. Use --no-dry-run to create real campaigns.[/bold yellow]"
         )
     else:
-        _execute_real(client, campaign_config, logger, run_id)
+        _execute_real(client, campaign_config, logger, run_id, page_id=page_id)
 
     console.print("[bold green]  Phase 3 complete.[/bold green]\n")

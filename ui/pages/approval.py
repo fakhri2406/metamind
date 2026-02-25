@@ -6,10 +6,11 @@ import json
 
 import streamlit as st
 
-from exceptions import MetaAPIError
+from exceptions import CredentialDecryptionError, MetaAPIError
 from models.campaign_config import CampaignConfig
 from phases.execute import run_execute
 from storage.logger import RunLogger
+from ui.components.account_selector import render_account_selector
 from ui.components.config_viewer import render_config_summary
 from ui.components.json_editor import render_json_editor
 from ui.state import get_config, init_state, reset_pipeline, set_config
@@ -38,6 +39,11 @@ if approval_state == "rejected":
         st.switch_page("pages/new_campaign.py")
     st.stop()
 
+# Account selector
+account = render_account_selector()
+if account is None:
+    st.stop()
+
 # --- State: approved ---
 if approval_state == "approved":
     st.markdown(
@@ -46,9 +52,9 @@ if approval_state == "approved":
         unsafe_allow_html=True,
     )
 
-    config = get_config()
-    if config:
-        render_config_summary(config)
+    config_obj = get_config()
+    if config_obj:
+        render_config_summary(config_obj)
 
     # Show execution results if available
     run_id = st.session_state.get("mm_run_id")
@@ -77,14 +83,14 @@ if approval_state == "approved":
     st.stop()
 
 # --- State: generated — main approval interface ---
-config = get_config()
-if not config:
+config_obj = get_config()
+if not config_obj:
     st.error("No campaign config found. Please generate a strategy first.")
     st.stop()
 
 # Header with badges
 st.markdown(
-    f"### {config.campaign.name} "
+    f"### {config_obj.campaign.name} "
     f'<span class="mm-badge mm-badge-paused">PAUSED</span>',
     unsafe_allow_html=True,
 )
@@ -95,19 +101,19 @@ col_left, col_right = st.columns([0.6, 0.4])
 with col_left:
     st.markdown('<div class="mm-section-header">Reasoning</div>', unsafe_allow_html=True)
     st.markdown(
-        f'<div class="mm-card-mono">{config.reasoning}</div>',
+        f'<div class="mm-card-mono">{config_obj.reasoning}</div>',
         unsafe_allow_html=True,
     )
 
-    if config.optimization_notes:
+    if config_obj.optimization_notes:
         st.markdown('<div class="mm-section-header">Optimization Notes</div>', unsafe_allow_html=True)
         st.markdown(
-            f'<div class="mm-card-mono">{config.optimization_notes}</div>',
+            f'<div class="mm-card-mono">{config_obj.optimization_notes}</div>',
             unsafe_allow_html=True,
         )
 
 with col_right:
-    render_config_summary(config)
+    render_config_summary(config_obj)
 
 st.markdown('<div class="mm-divider"></div>', unsafe_allow_html=True)
 
@@ -175,11 +181,21 @@ if approve_clicked:
         # Execute dry run directly
         try:
             with st.status("Running dry-run execution...", expanded=True) as status:
-                client = MetaClient()
-                run_execute(client, final_config, logger, run_id, dry_run=True)
+                client = MetaClient(
+                    access_token=account.access_token,
+                    app_id=account.app_id,
+                    app_secret=account.app_secret,
+                    ad_account_id=account.ad_account_id,
+                )
+                run_execute(
+                    client, final_config, logger, run_id,
+                    dry_run=True, page_id=account.page_id,
+                )
                 status.update(label="Dry run complete", state="complete")
             st.session_state["mm_approval_state"] = "approved"
             st.rerun()
+        except CredentialDecryptionError as e:
+            st.error(f"Credential Error: {e}")
         except MetaAPIError as e:
             st.error(f"Execution error: {e}")
         except Exception as e:
@@ -196,10 +212,20 @@ if approve_clicked:
             with col1:
                 if st.button("Execute", type="primary", use_container_width=True):
                     try:
-                        client = MetaClient()
-                        run_execute(client, final_config, logger, run_id, dry_run=False)
+                        client = MetaClient(
+                            access_token=account.access_token,
+                            app_id=account.app_id,
+                            app_secret=account.app_secret,
+                            ad_account_id=account.ad_account_id,
+                        )
+                        run_execute(
+                            client, final_config, logger, run_id,
+                            dry_run=False, page_id=account.page_id,
+                        )
                         st.session_state["mm_approval_state"] = "approved"
                         st.rerun()
+                    except CredentialDecryptionError as e:
+                        st.error(f"Credential Error: {e}")
                     except MetaAPIError as e:
                         st.error(f"Execution error: {e}")
                     except Exception as e:

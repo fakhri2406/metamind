@@ -8,6 +8,7 @@ import streamlit as st
 
 from models.campaign_config import CampaignConfig
 from storage.logger import RunLogger
+from ui.components.account_selector import render_account_selector
 from ui.components.config_viewer import render_config_summary
 from ui.state import init_state
 
@@ -15,9 +16,18 @@ init_state()
 
 st.markdown('<div class="mm-page-title">Run History</div>', unsafe_allow_html=True)
 
+# Account selector
+account = render_account_selector()
+if account is None:
+    st.stop()
+
+# Toggle to show all accounts
+show_all = st.toggle("Show all accounts", value=False)
+
 # Fetch runs and extract to plain dicts to avoid SQLAlchemy detached object issues
 logger = RunLogger()
-raw_runs = logger.get_all_runs()
+filter_account_id = None if show_all else account.id
+raw_runs = logger.get_all_runs(account_id=filter_account_id)
 
 runs: list[dict] = []
 for r in raw_runs:
@@ -83,8 +93,8 @@ if selected_idx is not None:
         with st.expander("Campaign Config", expanded=False):
             try:
                 parsed = json.loads(run["campaign_config_json"])
-                config = CampaignConfig.model_validate(parsed)
-                render_config_summary(config)
+                config_obj = CampaignConfig.model_validate(parsed)
+                render_config_summary(config_obj)
             except Exception:
                 st.json(json.loads(run["campaign_config_json"]))
 
