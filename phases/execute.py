@@ -53,8 +53,8 @@ def _usd_to_cents(usd: float) -> int:
 
 
 def _build_targeting_spec(
-    ad_set: AdSetSpec,
-    resolved_interests: dict[str, list[dict[str, Any]]],
+        ad_set: AdSetSpec,
+        resolved_interests: dict[str, list[dict[str, Any]]],
 ) -> dict[str, Any]:
     """Build Meta API targeting spec from an AdSetSpec."""
     targeting: dict[str, Any] = {
@@ -124,10 +124,10 @@ def _build_campaign_params(campaign_config: CampaignConfig) -> dict[str, Any]:
 
 
 def _build_ad_set_params(
-    ad_set: AdSetSpec,
-    campaign_id: str,
-    campaign_config: CampaignConfig,
-    resolved_interests: dict[str, list[dict[str, Any]]],
+        ad_set: AdSetSpec,
+        campaign_id: str,
+        campaign_config: CampaignConfig,
+        resolved_interests: dict[str, list[dict[str, Any]]],
 ) -> dict[str, Any]:
     """Build Meta API params for ad set creation."""
     params: dict[str, Any] = {
@@ -161,8 +161,8 @@ def _build_ad_set_params(
 
 
 def _build_creative_params(
-    ad: AdSpec,
-    page_id: str,
+        ad: AdSpec,
+        page_id: str,
 ) -> dict[str, Any]:
     """Build Meta API params for ad creative creation."""
     if ad.format == AdFormat.SINGLE_IMAGE:
@@ -305,8 +305,8 @@ def _execute_dry_run(campaign_config: CampaignConfig) -> None:
 
 
 def _resolve_all_interests(
-    client: MetaClient,
-    campaign_config: CampaignConfig,
+        client: MetaClient,
+        campaign_config: CampaignConfig,
 ) -> dict[str, list[dict[str, Any]]]:
     """Resolve all unique interest names to Meta targeting IDs."""
     unique_interests: set[str] = set()
@@ -328,10 +328,10 @@ def _resolve_all_interests(
 
 
 def _execute_real(
-    client: MetaClient,
-    campaign_config: CampaignConfig,
-    logger: RunLogger,
-    run_id: str,
+        client: MetaClient,
+        campaign_config: CampaignConfig,
+        logger: RunLogger,
+        run_id: str,
 ) -> None:
     """Execute real API calls to create the campaign."""
     console.print("\n[bold red]LIVE EXECUTION — Creating real campaigns[/bold red]\n")
@@ -403,11 +403,11 @@ def _execute_real(
 
 
 def run_execute(
-    client: MetaClient,
-    campaign_config: CampaignConfig,
-    logger: RunLogger,
-    run_id: str,
-    dry_run: bool = True,
+        client: MetaClient,
+        campaign_config: CampaignConfig,
+        logger: RunLogger,
+        run_id: str,
+        dry_run: bool = True,
 ) -> None:
     """Run Phase 3: Create campaign entities via Meta API.
 

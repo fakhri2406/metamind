@@ -77,15 +77,15 @@ class RunLogger:
                 session.commit()
 
     def log_strategy(
-        self,
-        run_id: str,
-        raw_response: str,
-        config_json: Optional[str] = None,
-        campaign_name: Optional[str] = None,
-        objective: Optional[str] = None,
-        budget_daily_usd: Optional[float] = None,
-        reasoning: Optional[str] = None,
-        error: Optional[str] = None,
+            self,
+            run_id: str,
+            raw_response: str,
+            config_json: Optional[str] = None,
+            campaign_name: Optional[str] = None,
+            objective: Optional[str] = None,
+            budget_daily_usd: Optional[float] = None,
+            reasoning: Optional[str] = None,
+            error: Optional[str] = None,
     ) -> None:
         """Log Phase 2 strategy results."""
         with self._session() as session:
@@ -110,13 +110,13 @@ class RunLogger:
                 session.commit()
 
     def log_execution(
-        self,
-        run_id: str,
-        dry_run: bool,
-        campaign_id: Optional[str] = None,
-        ad_set_ids: Optional[list[str]] = None,
-        ad_ids: Optional[list[str]] = None,
-        error: Optional[str] = None,
+            self,
+            run_id: str,
+            dry_run: bool,
+            campaign_id: Optional[str] = None,
+            ad_set_ids: Optional[list[str]] = None,
+            ad_ids: Optional[list[str]] = None,
+            error: Optional[str] = None,
     ) -> None:
         """Log Phase 3 execution results."""
         with self._session() as session:

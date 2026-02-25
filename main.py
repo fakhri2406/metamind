@@ -124,7 +124,7 @@ def _edit_config(campaign_config: CampaignConfig) -> Optional[CampaignConfig]:
     config_json = campaign_config.model_dump_json(indent=2)
 
     with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".json", delete=False, prefix="meta-ads-config-"
+            mode="w", suffix=".json", delete=False, prefix="meta-ads-config-"
     ) as f:
         f.write(config_json)
         tmp_path = f.name
@@ -144,16 +144,18 @@ def _edit_config(campaign_config: CampaignConfig) -> Optional[CampaignConfig]:
 
 @app.command()
 def run(
-    product_name: str = typer.Option(..., "--product-name", help="Name of the product/service"),
-    product_url: str = typer.Option(..., "--product-url", help="Product landing page URL"),
-    product_description: str = typer.Option(..., "--product-description", help="Product description"),
-    target_customer: str = typer.Option(..., "--target-customer", help="Target customer profile"),
-    goal: str = typer.Option(..., "--goal", help="Campaign goal (e.g., 'maximize purchases')"),
-    budget: float = typer.Option(..., "--budget", help="Daily budget in USD"),
-    aov: Optional[float] = typer.Option(None, "--aov", help="Average order value in USD"),
-    ads_per_ad_set: Optional[int] = typer.Option(None, "--ads-per-ad-set", help="Number of ads to create per ad set", min=1),
-    ad_set_overrides: Optional[str] = typer.Option(None, "--ad-set-overrides", help="Path to JSON file with per-ad-set config overrides"),
-    dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run", help="Dry run (default: True)"),
+        product_name: str = typer.Option(..., "--product-name", help="Name of the product/service"),
+        product_url: str = typer.Option(..., "--product-url", help="Product landing page URL"),
+        product_description: str = typer.Option(..., "--product-description", help="Product description"),
+        target_customer: str = typer.Option(..., "--target-customer", help="Target customer profile"),
+        goal: str = typer.Option(..., "--goal", help="Campaign goal (e.g., 'maximize purchases')"),
+        budget: float = typer.Option(..., "--budget", help="Daily budget in USD"),
+        aov: Optional[float] = typer.Option(None, "--aov", help="Average order value in USD"),
+        ads_per_ad_set: Optional[int] = typer.Option(None, "--ads-per-ad-set",
+                                                     help="Number of ads to create per ad set", min=1),
+        ad_set_overrides: Optional[str] = typer.Option(None, "--ad-set-overrides",
+                                                       help="Path to JSON file with per-ad-set config overrides"),
+        dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run", help="Dry run (default: True)"),
 ) -> None:
     """Run the full pipeline: ingest → strategize → approve → execute."""
     try:
@@ -243,7 +245,7 @@ def history() -> None:
 
 @app.command()
 def validate_config(
-    path: str = typer.Argument(..., help="Path to a campaign config JSON file"),
+        path: str = typer.Argument(..., help="Path to a campaign config JSON file"),
 ) -> None:
     """Validate a campaign config JSON file against the schema."""
     try:
@@ -268,11 +270,13 @@ def validate_config(
 
 @app.command()
 def optimize(
-    run_id: str = typer.Option(..., "--run-id", help="Run ID of a past campaign to optimize"),
-    budget: Optional[float] = typer.Option(None, "--budget", help="New daily budget (optional)"),
-    ads_per_ad_set: Optional[int] = typer.Option(None, "--ads-per-ad-set", help="Number of ads to create per ad set", min=1),
-    ad_set_overrides: Optional[str] = typer.Option(None, "--ad-set-overrides", help="Path to JSON file with per-ad-set config overrides"),
-    dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run", help="Dry run (default: True)"),
+        run_id: str = typer.Option(..., "--run-id", help="Run ID of a past campaign to optimize"),
+        budget: Optional[float] = typer.Option(None, "--budget", help="New daily budget (optional)"),
+        ads_per_ad_set: Optional[int] = typer.Option(None, "--ads-per-ad-set",
+                                                     help="Number of ads to create per ad set", min=1),
+        ad_set_overrides: Optional[str] = typer.Option(None, "--ad-set-overrides",
+                                                       help="Path to JSON file with per-ad-set config overrides"),
+        dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run", help="Dry run (default: True)"),
 ) -> None:
     """Re-optimize an existing campaign from a past run.
 

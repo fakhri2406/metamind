@@ -92,18 +92,18 @@ def _enforce_budget_cap(campaign_config: CampaignConfig) -> None:
 
 
 def run_strategize(
-    data: IngestedData,
-    logger: RunLogger,
-    run_id: str,
-    product_name: str,
-    product_url: str,
-    product_description: str,
-    target_customer: str,
-    goal: str,
-    budget: float,
-    aov: float | None = None,
-    ads_per_ad_set: int | None = None,
-    ad_set_overrides: dict[str, dict] | None = None,
+        data: IngestedData,
+        logger: RunLogger,
+        run_id: str,
+        product_name: str,
+        product_url: str,
+        product_description: str,
+        target_customer: str,
+        goal: str,
+        budget: float,
+        aov: float | None = None,
+        ads_per_ad_set: int | None = None,
+        ad_set_overrides: dict[str, dict] | None = None,
 ) -> CampaignConfig:
     """Run Phase 2: Send data to Claude and get a validated campaign config.
 

@@ -4,16 +4,16 @@ from models.meta_data import IngestedData
 
 
 def build_user_prompt(
-    data: IngestedData,
-    product_name: str,
-    product_url: str,
-    product_description: str,
-    target_customer: str,
-    goal: str,
-    budget: float,
-    aov: float | None = None,
-    ads_per_ad_set: int | None = None,
-    ad_set_overrides: dict[str, dict] | None = None,
+        data: IngestedData,
+        product_name: str,
+        product_url: str,
+        product_description: str,
+        target_customer: str,
+        goal: str,
+        budget: float,
+        aov: float | None = None,
+        ads_per_ad_set: int | None = None,
+        ad_set_overrides: dict[str, dict] | None = None,
 ) -> str:
     """Build the user prompt for Claude from ingested data and user inputs.
 
@@ -45,7 +45,8 @@ def build_user_prompt(
     if aov:
         sections.append(f"- **Average Order Value:** ${aov:.2f}")
     if ads_per_ad_set is not None:
-        sections.append(f"- **Ads Per Ad Set:** {ads_per_ad_set} (You MUST create exactly {ads_per_ad_set} ad(s) for each ad set.)")
+        sections.append(
+            f"- **Ads Per Ad Set:** {ads_per_ad_set} (You MUST create exactly {ads_per_ad_set} ad(s) for each ad set.)")
 
     # Account info
     sections.append("\n## Account Information")
@@ -82,7 +83,8 @@ def build_user_prompt(
                 sections.append(f"  - ROAS: {camp.roas:.2f}x")
     else:
         sections.append("\n### Campaign Performance")
-        sections.append("No historical campaign data available. This is a new account or no campaigns have run in the last 60 days.")
+        sections.append(
+            "No historical campaign data available. This is a new account or no campaigns have run in the last 60 days.")
 
     # Ad set performance
     if data.ad_sets:

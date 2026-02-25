@@ -3,10 +3,10 @@
 import time
 from typing import Any
 
-from facebook_business.adobjects.adaccount import AdAccount
-from facebook_business.adobjects.campaign import Campaign
-from facebook_business.adobjects.adset import AdSet
 from facebook_business.adobjects.ad import Ad
+from facebook_business.adobjects.adaccount import AdAccount
+from facebook_business.adobjects.adset import AdSet
+from facebook_business.adobjects.campaign import Campaign
 from facebook_business.adobjects.targetingsearch import TargetingSearch
 from facebook_business.api import FacebookAdsApi
 from facebook_business.exceptions import FacebookRequestError
@@ -81,7 +81,7 @@ class MetaClient:
         }
 
     def get_campaigns(
-        self, date_start: str, date_end: str
+            self, date_start: str, date_end: str
     ) -> list[dict[str, Any]]:
         """Fetch campaign performance data for a date range."""
         fields = [
@@ -111,16 +111,16 @@ class MetaClient:
             conversion_value = 0.0
             for action in row.get("actions", []):
                 if action.get("action_type") in (
-                    "offsite_conversion.fb_pixel_purchase",
-                    "offsite_conversion.fb_pixel_lead",
-                    "lead",
-                    "purchase",
+                        "offsite_conversion.fb_pixel_purchase",
+                        "offsite_conversion.fb_pixel_lead",
+                        "lead",
+                        "purchase",
                 ):
                     conversions += int(action.get("value", 0))
             for av in row.get("action_values", []):
                 if av.get("action_type") in (
-                    "offsite_conversion.fb_pixel_purchase",
-                    "purchase",
+                        "offsite_conversion.fb_pixel_purchase",
+                        "purchase",
                 ):
                     conversion_value += float(av.get("value", 0))
 
@@ -145,7 +145,7 @@ class MetaClient:
         return campaigns
 
     def get_ad_sets(
-        self, date_start: str, date_end: str
+            self, date_start: str, date_end: str
     ) -> list[dict[str, Any]]:
         """Fetch ad set performance data for a date range."""
         fields = [
@@ -172,16 +172,16 @@ class MetaClient:
             conversion_value = 0.0
             for action in row.get("actions", []):
                 if action.get("action_type") in (
-                    "offsite_conversion.fb_pixel_purchase",
-                    "offsite_conversion.fb_pixel_lead",
-                    "lead",
-                    "purchase",
+                        "offsite_conversion.fb_pixel_purchase",
+                        "offsite_conversion.fb_pixel_lead",
+                        "lead",
+                        "purchase",
                 ):
                     conversions += int(action.get("value", 0))
             for av in row.get("action_values", []):
                 if av.get("action_type") in (
-                    "offsite_conversion.fb_pixel_purchase",
-                    "purchase",
+                        "offsite_conversion.fb_pixel_purchase",
+                        "purchase",
                 ):
                     conversion_value += float(av.get("value", 0))
 

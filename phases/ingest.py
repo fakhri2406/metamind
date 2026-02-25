@@ -20,9 +20,9 @@ _LOOKBACK_DAYS = 60
 
 
 def run_ingest(
-    client: MetaClient,
-    logger: RunLogger,
-    run_id: str,
+        client: MetaClient,
+        logger: RunLogger,
+        run_id: str,
 ) -> IngestedData:
     """Pull all relevant data from the Meta Marketing API.
 

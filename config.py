@@ -34,7 +34,6 @@ CLAUDE_TEMPERATURE: float = 0
 # Database
 DB_PATH: str = os.path.join(os.path.dirname(__file__), "data", "campaign_runs.db")
 
-
 _REQUIRED_VARS = {
     "META_ACCESS_TOKEN": META_ACCESS_TOKEN,
     "META_AD_ACCOUNT_ID": META_AD_ACCOUNT_ID,
