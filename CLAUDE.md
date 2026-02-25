@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MetaMind is an AI-powered Meta Ads automation agent. This repository (`metamind-engine`) is built in Python. It pulls campaign performance data from the Meta Marketing API, sends it to Claude (Anthropic API) for strategic analysis, and uses the resulting structured recommendations to automatically build and launch Meta ad campaigns via the API.
+MetaMind is an AI-powered Meta Ads automation agent built in Python. It pulls campaign performance data from the Meta Marketing API, sends it to Claude (Anthropic API) for strategic analysis, and uses the resulting structured recommendations to automatically build and launch Meta ad campaigns via the API.
 
 The system has three phases:
 1. **Ingest** — Pull account data, campaign history, and audience insights from Meta API
@@ -19,7 +19,7 @@ There is always a human approval gate between Phase 2 and Phase 3. Campaigns are
 
 ## Project Structure
 ```
-metamind-engine/                   # This folder (project root)
+metamind/                   # This folder (project root)
 ├── main.py                        # Typer CLI — entry point for all commands
 ├── config.py                      # Env vars, constants, setup validation
 ├── exceptions.py                  # Custom exception classes
