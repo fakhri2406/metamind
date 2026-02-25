@@ -19,7 +19,7 @@ There is always a human approval gate between Phase 2 and Phase 3. Campaigns are
 
 ## Project Structure
 ```
-metamind/                   # This folder (project root)
+metamind/                          # This folder (project root)
 ├── main.py                        # Typer CLI — entry point for all commands
 ├── config.py                      # Env vars, constants, setup validation
 ├── exceptions.py                  # Custom exception classes
@@ -53,6 +53,27 @@ metamind/                   # This folder (project root)
 │   ├── __init__.py
 │   └── meta_client.py             # Thin wrapper around facebook-business SDK
 │
+├── ui/
+│   ├── __init__.py
+│   ├── app.py                     # Streamlit entry point: sys.path, page config, navigation
+│   ├── state.py                   # Session state (mm_* keys), init/reset helpers
+│   ├── styles.py                  # CUSTOM_CSS constant — all custom styling
+│   ├── run.sh                     # Launch script: cd to root, streamlit run ui/app.py
+│   ├── components/
+│   │   ├── __init__.py
+│   │   ├── config_viewer.py       # Reusable CampaignConfig display cards
+│   │   ├── json_editor.py         # Editable JSON text_area + Pydantic validation
+│   │   └── progress.py            # Three-phase stepper indicator
+│   └── pages/
+│       ├── __init__.py
+│       ├── new_campaign.py        # Campaign form → Phase 1 + 2 → approval
+│       ├── approval.py            # State machine: idle|generated|approved|rejected
+│       ├── history.py             # Run history table + expandable details
+│       └── optimize.py            # Past run selector + override form → Phase 1 + 2
+│
+├── .streamlit/
+│   └── config.toml                # Streamlit theme config (dark mode, primary color)
+│
 ├── data/
 │   └── campaign_runs.db           # SQLite database (auto-created, never committed)
 │
@@ -72,6 +93,7 @@ metamind/                   # This folder (project root)
 |---|---|
 | Language | Python 3.10+ |
 | CLI | Typer + Rich |
+| Web UI | Streamlit >= 1.35.0 |
 | Meta API | facebook-business (official SDK) |
 | AI | Anthropic Python SDK |
 | Data validation | Pydantic v2 |
@@ -313,6 +335,26 @@ python main.py optimize --run-id <UUID> --ad-set-overrides path/to/overrides.jso
 
 ---
 
+## Web UI (Streamlit)
+
+The Streamlit UI is an alternative to the CLI, providing the same pipeline through a browser interface. It imports and calls the existing phase functions directly — no backend API layer.
+
+**Launch:** `bash ui/run.sh` (or `streamlit run ui/app.py` from project root)
+
+**Pages:**
+- **New Campaign** — Form with all `run` command parameters. Runs Phase 1 + 2 on submit, navigates to approval.
+- **Review & Approve** — Displays Claude's reasoning, campaign summary, and a JSON editor. State machine: idle → generated → approved/rejected. Approve triggers Phase 3.
+- **Run History** — Table of all past runs from SQLite. Expand to see config, reasoning, execution log. "Optimize This Run" button navigates to optimize page.
+- **Optimize** — Select a past run, set new budget/overrides, re-run Phase 1 + 2 with optimization context.
+
+**Session state:** All keys prefixed `mm_` (e.g., `mm_campaign_config`, `mm_approval_state`, `mm_dry_run`). Managed in `ui/state.py`.
+
+**Styling:** Custom CSS in `ui/styles.py` (DM Sans font, JetBrains Mono for code). Theme config in `.streamlit/config.toml` (dark mode, `#2845D6` primary color).
+
+**Key rules carry over from CLI:** Dry-run defaults to `True`, campaigns always `PAUSED`, budget cap enforced, all phase errors caught and displayed inline (never crash the app).
+
+---
+
 ## Per-Ad-Set Configuration Overrides
 
 The `--ad-set-overrides` option accepts a path to a JSON file with per-ad-set instructions for Claude. This is an **optional escape hatch** for when individual ad sets need different settings within a single campaign.
@@ -349,7 +391,7 @@ Available on both `run` and `optimize` commands.
 1. Define or update the Pydantic model first (`models/`)
 2. Update the prompt template if Claude needs to return new data (`prompts/`)
 3. Implement the logic (`phases/` or `utils/`)
-4. Wire into CLI (`main.py`)
+4. Wire into CLI (`main.py`) and/or Streamlit UI (`ui/pages/`)
 5. Write tests
 
 **When changing the JSON schema:**
@@ -368,6 +410,7 @@ Available on both `run` and `optimize` commands.
 - Type hints on all function signatures
 - Docstrings on all public functions and classes
 - Use `rich` for all terminal output — no bare `print()` statements in phases or CLI
+- In Streamlit UI, use `st.error()` / `st.warning()` / `st.success()` — never bare `st.write()` for status
 - Enums use `(str, Enum)` pattern for Python 3.10 compatibility (not `StrEnum`)
 
 ---
