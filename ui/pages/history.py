@@ -6,7 +6,7 @@ import json
 
 import streamlit as st
 
-from models.campaign_config import CampaignConfig
+from models.campaign_config import CampaignConfig, ClaudeModel
 from storage.logger import RunLogger
 from ui.components.account_selector import render_account_selector
 from ui.components.config_viewer import render_config_summary
@@ -46,11 +46,22 @@ for r in raw_runs:
         "created_ad_set_ids": r.created_ad_set_ids or "",
         "created_ad_ids": r.created_ad_ids or "",
         "execution_error": r.execution_error or "",
+        "model": r.model,
     })
 
 if not runs:
     st.info("No runs found. Create a campaign to see history here.")
     st.stop()
+
+def _model_display_name(model_value: str | None) -> str:
+    """Map model API string to short display name."""
+    if model_value is None:
+        return "Opus 4.6"
+    try:
+        return ClaudeModel(model_value).display_name
+    except ValueError:
+        return model_value
+
 
 # Summary table
 table_data = []
@@ -69,6 +80,7 @@ for r in runs:
         "Campaign": r["campaign_name"],
         "Objective": r["objective"],
         "Budget": f"${r['budget_daily_usd']:.2f}" if r["budget_daily_usd"] else "—",
+        "Model": _model_display_name(r["model"]),
         "Status": status,
     })
 

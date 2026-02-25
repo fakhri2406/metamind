@@ -29,6 +29,7 @@ class RunLog(Base):
     ingested_data_json = Column(Text, nullable=True)
 
     # Phase 2: Strategy
+    model = Column(String, nullable=True)
     raw_claude_response = Column(Text, nullable=True)
     campaign_config_json = Column(Text, nullable=True)
     campaign_name = Column(String, nullable=True)
@@ -91,11 +92,14 @@ class RunLogger:
             budget_daily_usd: Optional[float] = None,
             reasoning: Optional[str] = None,
             error: Optional[str] = None,
+            model: Optional[str] = None,
     ) -> None:
         """Log Phase 2 strategy results."""
         with self._session() as session:
             run = session.get(RunLog, run_id)
             if run:
+                if model is not None:
+                    run.model = model
                 run.raw_claude_response = raw_response
                 run.campaign_config_json = config_json
                 run.campaign_name = campaign_name

@@ -122,7 +122,7 @@ All loaded in `config.py` via `python-dotenv`. See `.env` for the current values
 | `REQUIRE_HUMAN_APPROVAL` | `true` / `false` — gates execution after strategy |
 | `METAMIND_ENCRYPTION_KEY` | Fernet key for encrypting account credentials. Generate with `python main.py generate-key` |
 
-Meta credentials (`META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`, `META_APP_ID`, `META_APP_SECRET`, `META_PAGE_ID`) and `MAX_DAILY_BUDGET_USD` are now stored **per-account** in the SQLite database with sensitive fields encrypted. They are no longer environment variables.
+Meta credentials (`META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`, `META_APP_ID`, `META_APP_SECRET`, `META_PAGE_ID`) and `MAX_DAILY_BUDGET_USD` are now stored **per-account** in the SQLite database with sensitive fields encrypted. They are no longer environment variables. The Claude model is selected at runtime via `--model` flag (not an env var); the `ClaudeModel` enum in `models/campaign_config.py` defines available models.
 
 **Critical:** `max_daily_budget_usd` is enforced in code in `phases/strategize.py` (passed as a parameter from the account), not by prompt. Never remove this check.
 
@@ -280,7 +280,7 @@ Never use bare `except:`. Always catch specific exceptions and log before re-rai
 
 ## Claude API Usage
 
-- **Model:** `claude-opus-4-6` for Phase 2 (strategize) — this is the critical reasoning step, use the best model
+- **Model:** Configurable via `--model` flag (CLI) or selectbox (UI). Options: `opus` (default, `claude-opus-4-6`), `sonnet` (`claude-sonnet-4-6`), `haiku` (`claude-haiku-4-5-20251001`). The `ClaudeModel` enum in `models/campaign_config.py` is the source of truth. The model used is logged per-run in the `model` column of `run_logs`.
 - **Temperature:** `0` — deterministic output, no creativity needed here
 - **Max tokens:** `4096`
 - **System prompt:** loaded from `prompts/system_prompt.txt` at runtime (not hardcoded)
@@ -341,6 +341,9 @@ python main.py run --account-id <UUID> \
 # Specify number of ads per ad set
 python main.py run --account-id <UUID> [args] --ads-per-ad-set 3
 
+# Use a specific Claude model (default: opus)
+python main.py run --account-id <UUID> [args] --model sonnet
+
 # Use per-ad-set overrides from a JSON file
 python main.py run --account-id <UUID> [args] --ad-set-overrides path/to/overrides.json
 
@@ -358,6 +361,7 @@ python main.py validate-config path/to/config.json
 python main.py optimize --account-id <UUID> --run-id <UUID>
 python main.py optimize --account-id <UUID> --run-id <UUID> --budget 150 --ads-per-ad-set 2
 python main.py optimize --account-id <UUID> --run-id <UUID> --ad-set-overrides path/to/overrides.json
+python main.py optimize --account-id <UUID> --run-id <UUID> --model haiku
 ```
 
 ---
@@ -483,3 +487,15 @@ Available on both `run` and `optimize` commands.
 | TargetingSearch | Meta API endpoint to resolve interest names to targeting IDs |
 | Dry Run | Phase 3 execution mode that prints actions without making API calls |
 | Fernet | Symmetric encryption scheme from the `cryptography` library (AES-128-CBC + HMAC-SHA256) |
+
+---
+
+## Documentation Updates
+
+After completing each major step, update **`CLAUDE.md` (this file)** and **`README.md`** before moving on.
+
+**Rules:**
+- Do this at the end of each major completed step, not at the very end of the session
+- Be concise and accurate — remove outdated content rather than appending conflicting info
+- If a section doesn't need updating, leave it alone
+- Don't document incomplete or in-progress work

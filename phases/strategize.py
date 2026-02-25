@@ -9,7 +9,7 @@ from rich.console import Console
 
 import config
 from exceptions import BudgetCapError, StrategyError
-from models.campaign_config import CampaignConfig
+from models.campaign_config import CampaignConfig, ClaudeModel, DEFAULT_MODEL
 from models.meta_data import IngestedData
 from prompts.analysis_template import build_user_prompt
 from storage.logger import RunLogger
@@ -106,6 +106,7 @@ def run_strategize(
         aov: float | None = None,
         ads_per_ad_set: int | None = None,
         ad_set_overrides: dict[str, dict] | None = None,
+        model: ClaudeModel = DEFAULT_MODEL,
 ) -> CampaignConfig:
     """Run Phase 2: Send data to Claude and get a validated campaign config.
 
@@ -123,6 +124,7 @@ def run_strategize(
         aov: Average order value (optional).
         ads_per_ad_set: Number of ads to create per ad set (optional).
         ad_set_overrides: Per-ad-set configuration overrides (optional).
+        model: Claude model to use for strategy generation.
 
     Returns:
         Validated CampaignConfig.
@@ -131,7 +133,7 @@ def run_strategize(
         StrategyError: If Claude fails to return valid JSON after retry.
         BudgetCapError: If budget exceeds the configured cap.
     """
-    console.print("[bold blue]Phase 2: Generating strategy with Claude...[/bold blue]")
+    console.print(f"[bold blue]Phase 2: Generating strategy with Claude ({model.display_name})...[/bold blue]")
 
     system_prompt = _load_system_prompt()
     user_prompt = build_user_prompt(
@@ -152,7 +154,7 @@ def run_strategize(
     # First attempt
     console.print("  Calling Claude API...")
     response = client.messages.create(
-        model=config.CLAUDE_MODEL,
+        model=model.value,
         max_tokens=config.CLAUDE_MAX_TOKENS,
         temperature=config.CLAUDE_TEMPERATURE,
         system=system_prompt,
@@ -174,7 +176,7 @@ def run_strategize(
         # Retry once with the conversation history + correction
         correction = _CORRECTION_PROMPT.format(error=str(first_error))
         retry_response = client.messages.create(
-            model=config.CLAUDE_MODEL,
+            model=model.value,
             max_tokens=config.CLAUDE_MAX_TOKENS,
             temperature=config.CLAUDE_TEMPERATURE,
             system=system_prompt,
@@ -215,6 +217,7 @@ def run_strategize(
         objective=campaign_config.campaign.objective,
         budget_daily_usd=campaign_config.campaign.budget_daily_usd,
         reasoning=campaign_config.reasoning,
+        model=model.value,
     )
 
     console.print("[bold green]  Phase 2 complete.[/bold green]\n")

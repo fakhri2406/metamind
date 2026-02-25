@@ -7,7 +7,7 @@ import json
 import streamlit as st
 
 from exceptions import CredentialDecryptionError, MetaAPIError
-from models.campaign_config import CampaignConfig
+from models.campaign_config import CampaignConfig, ClaudeModel
 from phases.execute import run_execute
 from storage.logger import RunLogger
 from ui.components.account_selector import render_account_selector
@@ -89,9 +89,15 @@ if not config_obj:
     st.stop()
 
 # Header with badges
+_model_value = st.session_state.get("mm_model", "claude-opus-4-6")
+try:
+    _model_display = ClaudeModel(_model_value).display_name
+except ValueError:
+    _model_display = "Opus 4.6"
 st.markdown(
     f"### {config_obj.campaign.name} "
-    f'<span class="mm-badge mm-badge-paused">PAUSED</span>',
+    f'<span class="mm-badge mm-badge-paused">PAUSED</span> '
+    f'<span class="mm-badge">Model: {_model_display}</span>',
     unsafe_allow_html=True,
 )
 

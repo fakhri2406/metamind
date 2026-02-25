@@ -17,6 +17,7 @@ _DEFAULTS: dict[str, Any] = {
     "mm_dry_run": True,
     "mm_error": None,
     "mm_optimize_run_id": None,
+    "mm_model": "claude-opus-4-6",
     "mm_active_account_id": None,
     "mm_setup_ok": False,
     "mm_setup_error": None,
@@ -32,7 +33,7 @@ def init_state() -> None:
 
 def reset_pipeline() -> None:
     """Reset pipeline state for a new run, preserving setup status."""
-    keep = {"mm_setup_ok", "mm_setup_error", "mm_dry_run", "mm_active_account_id"}
+    keep = {"mm_setup_ok", "mm_setup_error", "mm_dry_run", "mm_active_account_id", "mm_model"}
     for key, default in _DEFAULTS.items():
         if key not in keep:
             st.session_state[key] = default

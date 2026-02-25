@@ -7,7 +7,7 @@ import json
 import streamlit as st
 
 from exceptions import BudgetCapError, CredentialDecryptionError, MetaAPIError, SetupError, StrategyError
-from models.campaign_config import CampaignConfig
+from models.campaign_config import CampaignConfig, ClaudeModel
 from phases.ingest import run_ingest
 from phases.strategize import run_strategize
 from storage.logger import RunLogger
@@ -117,6 +117,15 @@ with st.form("optimize_form"):
         type=["json"],
     )
 
+    _model_options = ["Opus 4.6 (Recommended)", "Sonnet 4.6", "Haiku 4.5"]
+    _model_map = {
+        "Opus 4.6 (Recommended)": ClaudeModel.OPUS,
+        "Sonnet 4.6": ClaudeModel.SONNET,
+        "Haiku 4.5": ClaudeModel.HAIKU,
+    }
+    selected_model_label = st.selectbox("Claude Model", _model_options)
+    st.caption("Opus: best quality | Sonnet: balanced | Haiku: fastest & cheapest")
+
     dry_run = st.toggle("Dry Run", value=True)
 
     if not dry_run:
@@ -149,9 +158,12 @@ if submitted:
             st.error(f"Invalid JSON in overrides file: {e}")
             st.stop()
 
+    claude_model = _model_map[selected_model_label]
+
     st.session_state["mm_dry_run"] = dry_run
     reset_pipeline()
     st.session_state["mm_dry_run"] = dry_run
+    st.session_state["mm_model"] = claude_model.value
 
     # Build optimization context (mirrors main.py optimize command)
     optimization_context = (
@@ -196,6 +208,7 @@ if submitted:
                 max_daily_budget_usd=account.max_daily_budget_usd,
                 ads_per_ad_set=ads_per_ad_set,
                 ad_set_overrides=ad_set_overrides,
+                model=claude_model,
             )
 
             set_config(campaign_config)

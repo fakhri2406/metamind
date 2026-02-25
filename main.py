@@ -20,7 +20,7 @@ from exceptions import (
     SetupError,
     StrategyError,
 )
-from models.campaign_config import CampaignConfig
+from models.campaign_config import CampaignConfig, ClaudeModel
 from phases.execute import run_execute
 from phases.ingest import run_ingest
 from phases.strategize import run_strategize
@@ -42,6 +42,27 @@ app = typer.Typer(
 accounts_app = typer.Typer(help="Manage Meta Ad Accounts")
 app.add_typer(accounts_app, name="accounts")
 console = Console()
+
+MODEL_SHORT_NAMES: dict[str, ClaudeModel] = {
+    "opus": ClaudeModel.OPUS,
+    "sonnet": ClaudeModel.SONNET,
+    "haiku": ClaudeModel.HAIKU,
+}
+
+
+def _resolve_model(name: str) -> ClaudeModel:
+    """Resolve a short model name to a ClaudeModel enum.
+
+    Raises typer.Exit if the name is invalid.
+    """
+    model = MODEL_SHORT_NAMES.get(name.lower())
+    if model is None:
+        console.print(
+            f"[bold red]Unknown model:[/bold red] '{name}'. "
+            f"Valid options: {', '.join(MODEL_SHORT_NAMES.keys())}"
+        )
+        raise typer.Exit(code=1)
+    return model
 
 
 def _load_ad_set_overrides(path: str) -> dict[str, dict]:
@@ -335,6 +356,7 @@ def run(
                                                      help="Number of ads to create per ad set", min=1),
         ad_set_overrides: Optional[str] = typer.Option(None, "--ad-set-overrides",
                                                        help="Path to JSON file with per-ad-set config overrides"),
+        model: str = typer.Option("opus", "--model", help="Claude model: opus, sonnet, or haiku"),
         dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run", help="Dry run (default: True)"),
 ) -> None:
     """Run the full pipeline: ingest → strategize → approve → execute."""
@@ -346,6 +368,7 @@ def run(
         console.print(f"[bold red]Setup Error:[/bold red] {e}")
         raise typer.Exit(code=1)
 
+    claude_model = _resolve_model(model)
     account = _load_account(account_id)
 
     overrides_dict = None
@@ -377,6 +400,7 @@ def run(
             aov=aov,
             ads_per_ad_set=ads_per_ad_set,
             ad_set_overrides=overrides_dict,
+            model=claude_model,
         )
 
         # Human approval gate
@@ -473,6 +497,7 @@ def optimize(
                                                      help="Number of ads to create per ad set", min=1),
         ad_set_overrides: Optional[str] = typer.Option(None, "--ad-set-overrides",
                                                        help="Path to JSON file with per-ad-set config overrides"),
+        model: str = typer.Option("opus", "--model", help="Claude model: opus, sonnet, or haiku"),
         dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run", help="Dry run (default: True)"),
 ) -> None:
     """Re-optimize an existing campaign from a past run.
@@ -487,6 +512,7 @@ def optimize(
         console.print(f"[bold red]Setup Error:[/bold red] {e}")
         raise typer.Exit(code=1)
 
+    claude_model = _resolve_model(model)
     account = _load_account(account_id)
 
     overrides_dict = None
@@ -540,6 +566,7 @@ def optimize(
             max_daily_budget_usd=account.max_daily_budget_usd,
             ads_per_ad_set=ads_per_ad_set,
             ad_set_overrides=overrides_dict,
+            model=claude_model,
         )
 
         if config.REQUIRE_HUMAN_APPROVAL:

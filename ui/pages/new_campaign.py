@@ -7,6 +7,7 @@ import json
 import streamlit as st
 
 from exceptions import BudgetCapError, CredentialDecryptionError, MetaAPIError, SetupError, StrategyError
+from models.campaign_config import ClaudeModel
 from phases.ingest import run_ingest
 from phases.strategize import run_strategize
 from storage.logger import RunLogger
@@ -52,6 +53,15 @@ with st.form("new_campaign_form"):
         ads_per_ad_set = st.number_input(
             "Ads per Ad Set", min_value=1, max_value=10, value=2
         )
+
+        _model_options = ["Opus 4.6 (Recommended)", "Sonnet 4.6", "Haiku 4.5"]
+        _model_map = {
+            "Opus 4.6 (Recommended)": ClaudeModel.OPUS,
+            "Sonnet 4.6": ClaudeModel.SONNET,
+            "Haiku 4.5": ClaudeModel.HAIKU,
+        }
+        selected_model_label = st.selectbox("Claude Model", _model_options)
+        st.caption("Opus: best quality | Sonnet: balanced | Haiku: fastest & cheapest")
 
         st.markdown('<div class="mm-divider"></div>', unsafe_allow_html=True)
 
@@ -113,9 +123,13 @@ if submitted:
     # Store dry-run preference
     st.session_state["mm_dry_run"] = dry_run
 
+    # Resolve selected model
+    claude_model = _model_map[selected_model_label]
+
     # Reset pipeline state for new run
     reset_pipeline()
     st.session_state["mm_dry_run"] = dry_run
+    st.session_state["mm_model"] = claude_model.value
 
     # Run phases
     try:
@@ -153,6 +167,7 @@ if submitted:
                 aov=aov if aov > 0 else None,
                 ads_per_ad_set=ads_per_ad_set,
                 ad_set_overrides=ad_set_overrides,
+                model=claude_model,
             )
 
             set_config(campaign_config)

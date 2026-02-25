@@ -15,7 +15,8 @@ def migrate(db_path: str) -> None:
 
     1. Creates `accounts` table if not exists.
     2. Adds `account_id` column to `run_logs` if not exists.
-    3. Backfills NULL `account_id` rows with a Legacy placeholder account.
+    3. Adds `model` column to `run_logs` if not exists (backfills with 'claude-opus-4-6').
+    4. Backfills NULL `account_id` rows with a Legacy placeholder account.
 
     Args:
         db_path: Path to the SQLite database file.
@@ -36,7 +37,22 @@ def migrate(db_path: str) -> None:
                     text("ALTER TABLE run_logs ADD COLUMN account_id VARCHAR")
                 )
 
-        # 3. Backfill NULL account_id rows with Legacy account
+        # 3. Add model column to run_logs if not exists
+        if "model" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE run_logs ADD COLUMN model VARCHAR")
+                )
+            # Backfill existing rows — all previous runs used Opus
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "UPDATE run_logs SET model = :model WHERE model IS NULL"
+                    ),
+                    {"model": "claude-opus-4-6"},
+                )
+
+        # 4. Backfill NULL account_id rows with Legacy account
         with engine.begin() as conn:
             result = conn.execute(
                 text("SELECT COUNT(*) FROM run_logs WHERE account_id IS NULL")

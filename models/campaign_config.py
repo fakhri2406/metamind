@@ -7,6 +7,28 @@ from typing import Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+class ClaudeModel(str, Enum):
+    """Available Claude models for strategy generation."""
+
+    OPUS = "claude-opus-4-6"
+    SONNET = "claude-sonnet-4-6"
+    HAIKU = "claude-haiku-4-5-20251001"
+
+    @property
+    def display_name(self) -> str:
+        """Short display name for UI and logs."""
+        return _MODEL_DISPLAY_NAMES[self]
+
+
+DEFAULT_MODEL: ClaudeModel = ClaudeModel.OPUS
+
+_MODEL_DISPLAY_NAMES = {
+    ClaudeModel.OPUS: "Opus 4.6",
+    ClaudeModel.SONNET: "Sonnet 4.6",
+    ClaudeModel.HAIKU: "Haiku 4.5",
+}
+
+
 class CampaignObjective(str, Enum):
     CONVERSIONS = "CONVERSIONS"
     TRAFFIC = "TRAFFIC"

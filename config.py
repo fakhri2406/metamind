@@ -31,7 +31,6 @@ if _raw_encryption_key:
 
 # Constants
 META_API_VERSION: str = "v21.0"
-CLAUDE_MODEL: str = "claude-opus-4-6"
 CLAUDE_MAX_TOKENS: int = 4096
 CLAUDE_TEMPERATURE: float = 0
 
