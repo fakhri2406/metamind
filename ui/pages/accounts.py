@@ -28,7 +28,7 @@ if not st.session_state["mm_setup_ok"]:
 
 # --- Load accounts ---
 try:
-    accounts = list_accounts(config.DB_PATH, config.ENCRYPTION_KEY)
+    accounts = list_accounts(config.ENCRYPTION_KEY)
 except CredentialDecryptionError as e:
     st.error(f"Decryption Error: {e}")
     st.stop()
@@ -111,7 +111,6 @@ with col_form:
             else:
                 try:
                     create_account(
-                        db_path=config.DB_PATH,
                         encryption_key=config.ENCRYPTION_KEY,
                         name=name.strip(),
                         access_token=access_token.strip(),
@@ -131,7 +130,7 @@ with col_form:
     elif mode == "edit" and st.session_state.get("mm_edit_account_id"):
         edit_id = st.session_state["mm_edit_account_id"]
         try:
-            acct = get_account(config.DB_PATH, config.ENCRYPTION_KEY, edit_id)
+            acct = get_account(config.ENCRYPTION_KEY, edit_id)
         except CredentialDecryptionError as e:
             st.error(f"Decryption Error: {e}")
             st.stop()
@@ -185,7 +184,7 @@ with col_form:
 
             if updates:
                 try:
-                    update_account(config.DB_PATH, config.ENCRYPTION_KEY, edit_id, **updates)
+                    update_account(config.ENCRYPTION_KEY, edit_id, **updates)
                     st.success("Account updated.")
                     st.rerun()
                 except Exception as e:
@@ -194,7 +193,7 @@ with col_form:
                 st.info("No changes detected.")
 
         if delete_clicked:
-            delete_account(config.DB_PATH, edit_id)
+            delete_account(edit_id)
             st.success(f"Account '{acct.name}' deleted.")
             st.session_state["mm_account_mode"] = "list"
             st.session_state["mm_edit_account_id"] = None

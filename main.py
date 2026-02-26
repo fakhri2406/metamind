@@ -31,7 +31,7 @@ from storage.accounts import (
     list_accounts,
 )
 from storage.logger import RunLogger
-from storage.migrations import migrate
+from storage.migrations import run_migrations
 from utils.meta_client import MetaClient
 
 app = typer.Typer(
@@ -101,7 +101,7 @@ def _load_account(account_id: str):
     Raises typer.Exit on failure.
     """
     try:
-        account = get_account(config.DB_PATH, config.ENCRYPTION_KEY, account_id)
+        account = get_account(config.ENCRYPTION_KEY, account_id)
     except CredentialDecryptionError as e:
         console.print(f"[bold red]Decryption Error:[/bold red] {e}")
         raise typer.Exit(code=1)
@@ -232,7 +232,7 @@ def accounts_list(
     show_secrets: bool = typer.Option(False, "--show-secrets", help="Show full credentials"),
 ) -> None:
     """List all active accounts."""
-    migrate(config.DB_PATH)
+    run_migrations()
 
     try:
         config.check_setup()
@@ -241,7 +241,7 @@ def accounts_list(
         raise typer.Exit(code=1)
 
     try:
-        accts = list_accounts(config.DB_PATH, config.ENCRYPTION_KEY)
+        accts = list_accounts(config.ENCRYPTION_KEY)
     except CredentialDecryptionError as e:
         console.print(f"[bold red]Decryption Error:[/bold red] {e}")
         raise typer.Exit(code=1)
@@ -262,7 +262,7 @@ def accounts_list(
 
     for acct in accts:
         row = [
-            acct.id,
+            str(acct.id),
             acct.name,
             acct.ad_account_id,
             f"${acct.max_daily_budget_usd:.2f}",
@@ -279,7 +279,7 @@ def accounts_list(
 @accounts_app.command("create")
 def accounts_create() -> None:
     """Create a new Meta Ad Account (interactive)."""
-    migrate(config.DB_PATH)
+    run_migrations()
 
     try:
         config.check_setup()
@@ -304,7 +304,6 @@ def accounts_create() -> None:
         raise typer.Exit(code=1)
 
     account = create_account(
-        db_path=config.DB_PATH,
         encryption_key=config.ENCRYPTION_KEY,
         name=name,
         access_token=access_token,
@@ -324,7 +323,7 @@ def accounts_delete(
     account_id: str = typer.Option(..., "--account-id", help="Account UUID to delete"),
 ) -> None:
     """Soft-delete an account."""
-    migrate(config.DB_PATH)
+    run_migrations()
 
     try:
         config.check_setup()
@@ -338,7 +337,7 @@ def accounts_delete(
         console.print("[yellow]Cancelled.[/yellow]")
         raise typer.Exit(code=0)
 
-    delete_account(config.DB_PATH, account_id)
+    delete_account(account_id)
     console.print(f"[green]Account '{account.name}' deleted (soft).[/green]")
 
 
@@ -360,7 +359,7 @@ def run(
         dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run", help="Dry run (default: True)"),
 ) -> None:
     """Run the full pipeline: ingest → strategize → approve → execute."""
-    migrate(config.DB_PATH)
+    run_migrations()
 
     try:
         config.check_setup()
@@ -376,7 +375,7 @@ def run(
         overrides_dict = _load_ad_set_overrides(ad_set_overrides)
 
     logger = RunLogger()
-    run_id = logger.create_run(account_id=account.id)
+    run_id = logger.create_run(account_id=str(account.id))
     console.print(f"[dim]Run ID: {run_id}[/dim]")
     console.print(f"[dim]Account: {account.name} ({account.ad_account_id})[/dim]\n")
 
@@ -431,7 +430,7 @@ def history(
     account_id: Optional[str] = typer.Option(None, "--account-id", help="Filter by account UUID"),
 ) -> None:
     """View past run history."""
-    migrate(config.DB_PATH)
+    run_migrations()
 
     logger = RunLogger()
     runs = logger.get_all_runs(account_id=account_id)
@@ -451,7 +450,7 @@ def history(
 
     for r in runs:
         table.add_row(
-            r.run_id,
+            str(r.run_id),
             r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "-",
             r.campaign_name or "-",
             r.objective or "-",
@@ -504,7 +503,7 @@ def optimize(
 
     Re-ingests current data, passes past config + reasoning as additional context to Claude.
     """
-    migrate(config.DB_PATH)
+    run_migrations()
 
     try:
         config.check_setup()
@@ -533,7 +532,7 @@ def optimize(
     # Parse past config to extract product info
     past_config = CampaignConfig.model_validate_json(past_run.campaign_config_json)
 
-    new_run_id = logger.create_run(account_id=account.id)
+    new_run_id = logger.create_run(account_id=str(account.id))
     console.print(f"[dim]Optimization Run ID: {new_run_id}[/dim]")
     console.print(f"[dim]Account: {account.name} ({account.ad_account_id})[/dim]")
     console.print(f"[dim]Based on past run: {run_id}[/dim]\n")

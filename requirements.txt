@@ -1,6 +1,8 @@
+alembic>=1.13.0
 anthropic>=0.39.0
 cryptography>=38.0.0
 facebook-business>=20.0.0
+psycopg2-binary>=2.9.0
 pydantic>=2.0.0
 python-dotenv>=1.0.0
 rich>=13.0.0

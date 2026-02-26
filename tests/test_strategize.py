@@ -99,7 +99,7 @@ class TestEnforceBudgetCap:
 class TestRunStrategize:
     @patch("phases.strategize.anthropic")
     def test_successful_strategize(
-            self, mock_anthropic, sample_campaign_config, sample_ingested_data, tmp_path
+            self, mock_anthropic, sample_campaign_config, sample_ingested_data
     ):
         """Test successful strategy generation with mocked Claude API."""
         from storage.logger import RunLogger
@@ -113,7 +113,7 @@ class TestRunStrategize:
         ]
         mock_client.messages.create.return_value = mock_response
 
-        logger = RunLogger(db_path=str(tmp_path / "test.db"))
+        logger = RunLogger()
         run_id = logger.create_run()
 
         from phases.strategize import run_strategize
@@ -137,7 +137,7 @@ class TestRunStrategize:
 
     @patch("phases.strategize.anthropic")
     def test_retry_on_first_failure(
-            self, mock_anthropic, sample_campaign_config, sample_ingested_data, tmp_path
+            self, mock_anthropic, sample_campaign_config, sample_ingested_data
     ):
         """Test that strategy retries once on parse failure."""
         from storage.logger import RunLogger
@@ -154,7 +154,7 @@ class TestRunStrategize:
         ]
         mock_client.messages.create.side_effect = [bad_response, good_response]
 
-        logger = RunLogger(db_path=str(tmp_path / "test.db"))
+        logger = RunLogger()
         run_id = logger.create_run()
 
         from phases.strategize import run_strategize
@@ -177,7 +177,7 @@ class TestRunStrategize:
 
     @patch("phases.strategize.anthropic")
     def test_strategy_error_after_two_failures(
-            self, mock_anthropic, sample_ingested_data, tmp_path
+            self, mock_anthropic, sample_ingested_data
     ):
         """Test that StrategyError is raised after two parse failures."""
         from storage.logger import RunLogger
@@ -189,7 +189,7 @@ class TestRunStrategize:
         bad_response.content = [MagicMock(text="not valid json")]
         mock_client.messages.create.return_value = bad_response
 
-        logger = RunLogger(db_path=str(tmp_path / "test.db"))
+        logger = RunLogger()
         run_id = logger.create_run()
 
         from phases.strategize import run_strategize
@@ -311,7 +311,7 @@ class TestAdSetOverrides:
 
     @patch("phases.strategize.anthropic")
     def test_run_strategize_passes_overrides_through(
-            self, mock_anthropic, sample_campaign_config, sample_ingested_data, tmp_path
+            self, mock_anthropic, sample_campaign_config, sample_ingested_data
     ):
         """Overrides flow from run_strategize through to build_user_prompt."""
         from storage.logger import RunLogger
@@ -325,7 +325,7 @@ class TestAdSetOverrides:
         ]
         mock_client.messages.create.return_value = mock_response
 
-        logger = RunLogger(db_path=str(tmp_path / "test.db"))
+        logger = RunLogger()
         run_id = logger.create_run()
 
         overrides = {"Interest Targeting": {"age_min": 30}}

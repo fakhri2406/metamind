@@ -18,7 +18,7 @@ def render_account_selector() -> Optional[Any]:
     Returns None if no accounts exist (caller should st.stop()).
     """
     try:
-        accounts = list_accounts(config.DB_PATH, config.ENCRYPTION_KEY)
+        accounts = list_accounts(config.ENCRYPTION_KEY)
     except CredentialDecryptionError as e:
         st.error(f"Decryption Error: {e}")
         return None
@@ -48,7 +48,7 @@ def render_account_selector() -> Optional[Any]:
 
     # Return a fully decrypted Account object
     try:
-        return get_account(config.DB_PATH, config.ENCRYPTION_KEY, selected.id)
+        return get_account(config.ENCRYPTION_KEY, selected.id)
     except CredentialDecryptionError as e:
         st.error(f"Decryption Error: {e}")
         return None

@@ -5,6 +5,8 @@ import os
 
 from dotenv import load_dotenv
 from rich.console import Console
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from exceptions import SetupError
 
@@ -35,7 +37,15 @@ CLAUDE_MAX_TOKENS: int = 4096
 CLAUDE_TEMPERATURE: float = 0
 
 # Database
-DB_PATH: str = os.path.join(os.path.dirname(__file__), "data", "campaign_runs.db")
+DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+
+engine = create_engine(
+    DATABASE_URL, pool_pre_ping=True, pool_size=5, max_overflow=10
+) if DATABASE_URL else None
+
+SessionLocal = sessionmaker(
+    autocommit=False, autoflush=False, bind=engine
+) if engine else None
 
 _REQUIRED_VARS = {
     "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY,
@@ -53,6 +63,12 @@ def check_setup() -> None:
         raise SetupError(
             f"Missing required environment variables: {', '.join(missing)}. "
             f"Copy .env.example to .env and fill in all values."
+        )
+
+    if not DATABASE_URL:
+        raise SetupError(
+            "Missing DATABASE_URL. "
+            "Set it in .env (e.g., postgresql://user:password@localhost:5432/metamind-dev-db)"
         )
 
     if not _raw_encryption_key:

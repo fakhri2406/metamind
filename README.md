@@ -31,7 +31,9 @@ Supports **multiple Meta Ad Accounts** with encrypted credential storage. Each p
 | Meta API | facebook-business SDK |
 | AI | Anthropic Python SDK (Claude) |
 | Validation | Pydantic v2 |
-| Storage | SQLAlchemy + SQLite |
+| Database | PostgreSQL + psycopg2 |
+| ORM | SQLAlchemy 2.0+ |
+| Migrations | Alembic |
 | Encryption | cryptography (Fernet) |
 | Testing | pytest |
 | Linting | ruff |
@@ -41,6 +43,7 @@ Supports **multiple Meta Ad Accounts** with encrypted credential storage. Each p
 ### Prerequisites
 
 - Python 3.10+
+- PostgreSQL 14+
 - A [Meta Developer](https://developers.facebook.com/) app with Marketing API access
 - An [Anthropic API](https://console.anthropic.com/) key
 
@@ -56,6 +59,7 @@ Required environment variables in `.env`:
 
 ```
 ANTHROPIC_API_KEY=
+DATABASE_URL=postgresql://user:password@localhost:5432/metamind-dev-db
 REQUIRE_HUMAN_APPROVAL=true
 METAMIND_ENCRYPTION_KEY=      # Generate with: python main.py generate-key
 ```
@@ -65,14 +69,17 @@ Meta credentials (access token, app ID, app secret, ad account ID, page ID) and 
 ### First-Time Setup
 
 ```bash
-# 1. Generate an encryption key and add it to .env
+# 1. Create a PostgreSQL database
+createdb metamind-dev-db
+
+# 2. Generate an encryption key and add it to .env
 python main.py generate-key
 
-# 2. Create your first Meta Ad Account
+# 3. Create your first Meta Ad Account (runs migrations automatically)
 python main.py accounts create
 # (interactive prompts for name, access token, ad account ID, etc.)
 
-# 3. List accounts to get the UUID
+# 4. List accounts to get the UUID
 python main.py accounts list
 ```
 
@@ -146,7 +153,8 @@ Both interfaces call the same phase functions. The UI is a separate entry point,
 | `phases/` | Core pipeline: ingest, strategize, execute |
 | `models/` | Pydantic v2 models -- the contract between Claude and Meta API |
 | `prompts/` | System prompt and dynamic prompt builder |
-| `storage/` | SQLAlchemy + SQLite: run logger, account CRUD, encryption, migrations |
+| `storage/` | SQLAlchemy + PostgreSQL: run logger, account CRUD, encryption |
+| `alembic/` | Database migrations (Alembic) |
 | `utils/` | Meta API client wrapper |
 | `ui/` | Streamlit web interface |
 
@@ -163,20 +171,25 @@ See [CLAUDE.md](CLAUDE.md) for the full schema and all implementation details.
 - **Dry-run default** -- Real API calls require explicit `--no-dry-run`
 - **Human approval** -- Strategy must be reviewed before execution
 - **Strict validation** -- Pydantic enforces the JSON contract; bad data is never coerced
-- **Full logging** -- Every run, Claude response, and API call is logged to SQLite with account ID
+- **Full logging** -- Every run, Claude response, and API call is logged to PostgreSQL with account ID
 - **Encrypted credentials** -- Account access tokens and app secrets are encrypted at rest with Fernet
 
 ## Development
 
 ```bash
-# Run tests
+# Create the test database
+createdb metamind-test
+
+# Run tests (requires PostgreSQL)
 make test
+# Or with a custom test DB:
+TEST_DATABASE_URL=postgresql://user:pass@localhost:5432/metamind-test make test
 
 # Lint
 make lint
 ```
 
-All tests use mocks -- no real API calls. See [CLAUDE.md](CLAUDE.md) for development guidelines, error handling conventions, and the full project reference.
+All tests use mocks for external APIs -- no real Meta or Anthropic API calls. Tests require a PostgreSQL instance. See [CLAUDE.md](CLAUDE.md) for development guidelines, error handling conventions, and the full project reference.
 
 ## License
 

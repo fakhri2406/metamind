@@ -1,19 +1,17 @@
-"""SQLAlchemy + SQLite logger for all pipeline runs."""
+"""SQLAlchemy logger for all pipeline runs."""
 
 import json
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Column, DateTime, Float, String, Boolean, Text, create_engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy import Column, DateTime, Float, String, Boolean, Text
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import Session
 
 import config
 from models.meta_data import PastRunSummary
-
-
-class Base(DeclarativeBase):
-    pass
+from storage.base import Base
 
 
 class RunLog(Base):
@@ -21,8 +19,8 @@ class RunLog(Base):
 
     __tablename__ = "run_logs"
 
-    run_id = Column(String, primary_key=True)
-    account_id = Column(String, nullable=True)
+    run_id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    account_id = Column(PG_UUID(as_uuid=True), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Phase 1: Ingest
@@ -51,16 +49,13 @@ class RunLog(Base):
 
 
 class RunLogger:
-    """Logger for pipeline runs backed by SQLite."""
+    """Logger for pipeline runs backed by PostgreSQL."""
 
-    def __init__(self, db_path: Optional[str] = None) -> None:
-        db_url = f"sqlite:///{db_path or config.DB_PATH}"
-        self._engine = create_engine(db_url, echo=False)
-        Base.metadata.create_all(self._engine)
-        self._session_factory = sessionmaker(bind=self._engine)
+    def __init__(self) -> None:
+        pass
 
     def _session(self) -> Session:
-        return self._session_factory()
+        return config.SessionLocal()
 
     def create_run(self, account_id: Optional[str] = None) -> str:
         """Create a new run and return its ID.
@@ -68,16 +63,19 @@ class RunLogger:
         Args:
             account_id: Optional account UUID to associate with this run.
         """
-        run_id = str(uuid.uuid4())
+        run_id = uuid.uuid4()
         with self._session() as session:
-            session.add(RunLog(run_id=run_id, account_id=account_id))
+            session.add(RunLog(
+                run_id=run_id,
+                account_id=uuid.UUID(account_id) if account_id else None,
+            ))
             session.commit()
-        return run_id
+        return str(run_id)
 
     def log_ingested_data(self, run_id: str, data_json: str) -> None:
         """Log Phase 1 ingested data."""
         with self._session() as session:
-            run = session.get(RunLog, run_id)
+            run = session.get(RunLog, uuid.UUID(run_id))
             if run:
                 run.ingested_data_json = data_json
                 session.commit()
@@ -96,7 +94,7 @@ class RunLogger:
     ) -> None:
         """Log Phase 2 strategy results."""
         with self._session() as session:
-            run = session.get(RunLog, run_id)
+            run = session.get(RunLog, uuid.UUID(run_id))
             if run:
                 if model is not None:
                     run.model = model
@@ -112,7 +110,7 @@ class RunLogger:
     def log_approval(self, run_id: str, approved: bool) -> None:
         """Log the human approval decision."""
         with self._session() as session:
-            run = session.get(RunLog, run_id)
+            run = session.get(RunLog, uuid.UUID(run_id))
             if run:
                 run.approved = approved
                 run.approval_timestamp = datetime.now(timezone.utc)
@@ -129,7 +127,7 @@ class RunLogger:
     ) -> None:
         """Log Phase 3 execution results."""
         with self._session() as session:
-            run = session.get(RunLog, run_id)
+            run = session.get(RunLog, uuid.UUID(run_id))
             if run:
                 run.dry_run = dry_run
                 run.created_campaign_id = campaign_id
@@ -141,7 +139,10 @@ class RunLogger:
     def get_run(self, run_id: str) -> Optional[RunLog]:
         """Fetch a single run by ID."""
         with self._session() as session:
-            return session.get(RunLog, run_id)
+            run = session.get(RunLog, uuid.UUID(run_id))
+            if run:
+                session.expunge(run)
+            return run
 
     def get_all_runs(self, account_id: Optional[str] = None) -> list[RunLog]:
         """Fetch all runs ordered by creation date descending.
@@ -152,8 +153,11 @@ class RunLogger:
         with self._session() as session:
             query = session.query(RunLog)
             if account_id is not None:
-                query = query.filter(RunLog.account_id == account_id)
-            return query.order_by(RunLog.created_at.desc()).all()
+                query = query.filter(RunLog.account_id == uuid.UUID(account_id))
+            runs = query.order_by(RunLog.created_at.desc()).all()
+            for run in runs:
+                session.expunge(run)
+            return runs
 
     def get_past_run_summaries(self, account_id: Optional[str] = None) -> list[PastRunSummary]:
         """Get summaries of past runs for inclusion in the analysis prompt.
@@ -167,7 +171,7 @@ class RunLogger:
                 .filter(RunLog.campaign_config_json.isnot(None))
             )
             if account_id is not None:
-                query = query.filter(RunLog.account_id == account_id)
+                query = query.filter(RunLog.account_id == uuid.UUID(account_id))
             runs = (
                 query.order_by(RunLog.created_at.desc())
                 .limit(10)
@@ -175,7 +179,7 @@ class RunLogger:
             )
             return [
                 PastRunSummary(
-                    run_id=run.run_id,
+                    run_id=str(run.run_id),
                     created_at=run.created_at.isoformat() if run.created_at else "",
                     campaign_name=run.campaign_name or "",
                     objective=run.objective or "",

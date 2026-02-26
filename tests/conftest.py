@@ -1,9 +1,13 @@
 """Shared test fixtures for MetaMind."""
 
+import os
 from datetime import date, timedelta
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
+import config
 from models.campaign_config import (
     AdFormat,
     AdSetSpec,
@@ -24,6 +28,38 @@ from models.meta_data import (
     CustomAudience,
     IngestedData,
 )
+from storage.base import Base
+
+
+@pytest.fixture(autouse=True)
+def test_db():
+    """Set up a test PostgreSQL database and override config.engine/SessionLocal.
+
+    Reads TEST_DATABASE_URL from the environment (defaults to a local test DB).
+    Creates all tables before tests, drops them after.
+    """
+    test_url = os.getenv(
+        "TEST_DATABASE_URL",
+        "postgresql://localhost:5432/metamind-test",
+    )
+    test_engine = create_engine(test_url, echo=False)
+    test_session_factory = sessionmaker(
+        autocommit=False, autoflush=False, bind=test_engine,
+    )
+
+    # Override config globals
+    config.DATABASE_URL = test_url
+    config.engine = test_engine
+    config.SessionLocal = test_session_factory
+
+    # Create all tables
+    Base.metadata.create_all(test_engine)
+
+    yield test_engine
+
+    # Drop all tables after test
+    Base.metadata.drop_all(test_engine)
+    test_engine.dispose()
 
 
 @pytest.fixture

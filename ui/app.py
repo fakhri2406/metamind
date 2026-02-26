@@ -33,10 +33,9 @@ init_state()
 # Run migration on startup
 if not st.session_state.get("mm_migration_done"):
     try:
-        import config
-        from storage.migrations import migrate
+        from storage.migrations import run_migrations
 
-        migrate(config.DB_PATH)
+        run_migrations()
         st.session_state["mm_migration_done"] = True
     except Exception:
         st.session_state["mm_migration_done"] = True  # Don't block on migration failure

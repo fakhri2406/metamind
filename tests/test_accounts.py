@@ -12,7 +12,7 @@ from storage.accounts import (
     update_account,
 )
 from storage.encryption import decrypt, encrypt
-from storage.migrations import migrate
+from storage.migrations import run_migrations
 
 
 @pytest.fixture
@@ -22,16 +22,9 @@ def fernet_key() -> bytes:
 
 
 @pytest.fixture
-def db_path(tmp_path) -> str:
-    """Return a temporary database path."""
-    return str(tmp_path / "test_accounts.db")
-
-
-@pytest.fixture
-def sample_account(db_path, fernet_key):
+def sample_account(fernet_key):
     """Create and return a sample account."""
     return create_account(
-        db_path=db_path,
         encryption_key=fernet_key,
         name="Test Account",
         access_token="EAABsbCS1IEBAZ...",
@@ -91,36 +84,36 @@ class TestAccountCRUD:
         assert sample_account.is_active is True
         assert sample_account.id is not None
 
-    def test_get_account(self, db_path, fernet_key, sample_account):
+    def test_get_account(self, fernet_key, sample_account):
         """Getting an account returns it with decrypted fields."""
-        fetched = get_account(db_path, fernet_key, sample_account.id)
+        fetched = get_account(fernet_key, str(sample_account.id))
         assert fetched is not None
         assert fetched.name == "Test Account"
         assert fetched.access_token == "EAABsbCS1IEBAZ..."
         assert fetched.app_secret == "abc123secret"
 
-    def test_get_account_not_found(self, db_path, fernet_key):
+    def test_get_account_not_found(self, fernet_key):
         """Getting a nonexistent account returns None."""
-        result = get_account(db_path, fernet_key, "nonexistent-uuid")
+        result = get_account(fernet_key, "00000000-0000-0000-0000-000000000001")
         assert result is None
 
-    def test_list_accounts(self, db_path, fernet_key, sample_account):
+    def test_list_accounts(self, fernet_key, sample_account):
         """Listing accounts returns only active accounts."""
-        accounts = list_accounts(db_path, fernet_key)
+        accounts = list_accounts(fernet_key)
         assert len(accounts) == 1
         assert accounts[0].name == "Test Account"
         assert accounts[0].access_token == "EAABsbCS1IEBAZ..."
 
-    def test_list_accounts_excludes_deleted(self, db_path, fernet_key, sample_account):
+    def test_list_accounts_excludes_deleted(self, fernet_key, sample_account):
         """Listing accounts excludes soft-deleted accounts."""
-        delete_account(db_path, sample_account.id)
-        accounts = list_accounts(db_path, fernet_key)
+        delete_account(str(sample_account.id))
+        accounts = list_accounts(fernet_key)
         assert len(accounts) == 0
 
-    def test_update_account(self, db_path, fernet_key, sample_account):
+    def test_update_account(self, fernet_key, sample_account):
         """Updating an account changes the specified fields."""
         updated = update_account(
-            db_path, fernet_key, sample_account.id,
+            fernet_key, str(sample_account.id),
             name="Updated Name",
             max_daily_budget_usd=1000.0,
         )
@@ -131,36 +124,35 @@ class TestAccountCRUD:
         assert updated.access_token == "EAABsbCS1IEBAZ..."
         assert updated.ad_account_id == "act_123456789"
 
-    def test_update_sensitive_field(self, db_path, fernet_key, sample_account):
+    def test_update_sensitive_field(self, fernet_key, sample_account):
         """Updating a sensitive field re-encrypts it."""
         updated = update_account(
-            db_path, fernet_key, sample_account.id,
+            fernet_key, str(sample_account.id),
             access_token="new_token_value",
         )
         assert updated is not None
         assert updated.access_token == "new_token_value"
 
         # Verify it's stored encrypted in DB (re-fetch raw)
-        fetched = get_account(db_path, fernet_key, sample_account.id)
+        fetched = get_account(fernet_key, str(sample_account.id))
         assert fetched.access_token == "new_token_value"
 
-    def test_update_nonexistent_account(self, db_path, fernet_key):
+    def test_update_nonexistent_account(self, fernet_key):
         """Updating a nonexistent account returns None."""
-        result = update_account(db_path, fernet_key, "nonexistent-uuid", name="X")
+        result = update_account(fernet_key, "00000000-0000-0000-0000-000000000001", name="X")
         assert result is None
 
-    def test_delete_account_soft(self, db_path, fernet_key, sample_account):
+    def test_delete_account_soft(self, fernet_key, sample_account):
         """Deleting an account sets is_active=False."""
-        delete_account(db_path, sample_account.id)
+        delete_account(str(sample_account.id))
         # Still fetchable by ID
-        fetched = get_account(db_path, fernet_key, sample_account.id)
+        fetched = get_account(fernet_key, str(sample_account.id))
         assert fetched is not None
         assert fetched.is_active is False
 
-    def test_multiple_accounts(self, db_path, fernet_key, sample_account):
+    def test_multiple_accounts(self, fernet_key, sample_account):
         """Multiple accounts can coexist."""
         create_account(
-            db_path=db_path,
             encryption_key=fernet_key,
             name="Second Account",
             access_token="token_2",
@@ -170,68 +162,19 @@ class TestAccountCRUD:
             page_id="page_2",
             max_daily_budget_usd=200.0,
         )
-        accounts = list_accounts(db_path, fernet_key)
+        accounts = list_accounts(fernet_key)
         assert len(accounts) == 2
         names = {a.name for a in accounts}
         assert names == {"Test Account", "Second Account"}
 
 
 class TestMigrations:
-    def test_migration_creates_accounts_table(self, db_path):
-        """Migration creates the accounts table."""
-        migrate(db_path)
+    def test_migration_runs_clean(self, test_db):
+        """Running Alembic migrations against the test DB doesn't error."""
+        # Tables already created by conftest, but run_migrations() should be idempotent
+        run_migrations()
 
-        from sqlalchemy import create_engine, inspect
-        engine = create_engine(f"sqlite:///{db_path}")
-        inspector = inspect(engine)
-        assert "accounts" in inspector.get_table_names()
-
-    def test_migration_idempotent(self, db_path):
+    def test_migration_idempotent(self, test_db):
         """Running migration twice doesn't error."""
-        migrate(db_path)
-        migrate(db_path)  # Should not raise
-
-    def test_migration_adds_account_id_to_run_logs(self, db_path):
-        """Migration adds account_id column to run_logs if the table exists."""
-        from storage.logger import RunLogger
-
-        # Create run_logs table first
-        logger = RunLogger(db_path=db_path)
-        logger.create_run()
-
-        # Run migration
-        migrate(db_path)
-
-        from sqlalchemy import create_engine, inspect
-        engine = create_engine(f"sqlite:///{db_path}")
-        inspector = inspect(engine)
-        columns = [col["name"] for col in inspector.get_columns("run_logs")]
-        assert "account_id" in columns
-
-    def test_migration_backfills_legacy_account(self, db_path):
-        """Migration backfills NULL account_id rows with Legacy account."""
-        from storage.logger import RunLogger
-
-        logger = RunLogger(db_path=db_path)
-        run_id = logger.create_run()
-
-        # Run migration — should backfill
-        migrate(db_path)
-
-        from sqlalchemy import create_engine, text
-        engine = create_engine(f"sqlite:///{db_path}")
-        with engine.connect() as conn:
-            result = conn.execute(
-                text("SELECT account_id FROM run_logs WHERE run_id = :id"),
-                {"id": run_id},
-            )
-            account_id = result.scalar()
-            assert account_id == "00000000-0000-0000-0000-000000000000"
-
-            # Legacy account should exist
-            result = conn.execute(
-                text("SELECT name FROM accounts WHERE id = :id"),
-                {"id": "00000000-0000-0000-0000-000000000000"},
-            )
-            name = result.scalar()
-            assert name == "Legacy (pre-migration)"
+        run_migrations()
+        run_migrations()  # Should not raise

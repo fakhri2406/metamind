@@ -4,22 +4,20 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Boolean, Column, DateTime, Float, String, create_engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy import Boolean, Column, DateTime, Float, String
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
+import config
+from storage.base import Base
 from storage.encryption import decrypt, encrypt
 
 
-class AccountBase(DeclarativeBase):
-    pass
-
-
-class Account(AccountBase):
+class Account(Base):
     """Database model for a Meta Ad Account."""
 
     __tablename__ = "accounts"
 
-    id = Column(String, primary_key=True)
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
     access_token = Column(String, nullable=False)  # stored encrypted
     ad_account_id = Column(String, nullable=False)  # plaintext
@@ -31,14 +29,6 @@ class Account(AccountBase):
     is_active = Column(Boolean, default=True)
 
 
-def _get_session(db_path: str) -> Session:
-    """Create a session for the given database path."""
-    engine = create_engine(f"sqlite:///{db_path}", echo=False)
-    AccountBase.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine)
-    return factory()
-
-
 def _decrypt_account(account: Account, encryption_key: bytes) -> Account:
     """Decrypt sensitive fields on an Account object in-place and return it."""
     account.access_token = decrypt(account.access_token, encryption_key)
@@ -47,7 +37,6 @@ def _decrypt_account(account: Account, encryption_key: bytes) -> Account:
 
 
 def create_account(
-    db_path: str,
     encryption_key: bytes,
     name: str,
     access_token: str,
@@ -60,7 +49,6 @@ def create_account(
     """Create a new account with encrypted sensitive fields.
 
     Args:
-        db_path: Path to the SQLite database.
         encryption_key: Fernet key for encrypting credentials.
         name: Human-readable account name.
         access_token: Meta access token (will be encrypted).
@@ -74,7 +62,7 @@ def create_account(
         The created Account with sensitive fields decrypted.
     """
     account = Account(
-        id=str(uuid.uuid4()),
+        id=uuid.uuid4(),
         name=name,
         access_token=encrypt(access_token, encryption_key),
         ad_account_id=ad_account_id,
@@ -84,7 +72,7 @@ def create_account(
         max_daily_budget_usd=max_daily_budget_usd,
     )
 
-    with _get_session(db_path) as session:
+    with config.SessionLocal() as session:
         session.add(account)
         session.commit()
         session.refresh(account)
@@ -98,22 +86,20 @@ def create_account(
 
 
 def get_account(
-    db_path: str,
     encryption_key: bytes,
     account_id: str,
 ) -> Optional[Account]:
     """Fetch a single account by ID with decrypted credentials.
 
     Args:
-        db_path: Path to the SQLite database.
         encryption_key: Fernet key for decrypting credentials.
         account_id: The account UUID.
 
     Returns:
         Account with decrypted fields, or None if not found.
     """
-    with _get_session(db_path) as session:
-        account = session.get(Account, account_id)
+    with config.SessionLocal() as session:
+        account = session.get(Account, uuid.UUID(account_id) if isinstance(account_id, str) else account_id)
         if account is None:
             return None
         session.expunge(account)
@@ -122,19 +108,17 @@ def get_account(
 
 
 def list_accounts(
-    db_path: str,
     encryption_key: bytes,
 ) -> list[Account]:
     """List all active accounts with decrypted credentials.
 
     Args:
-        db_path: Path to the SQLite database.
         encryption_key: Fernet key for decrypting credentials.
 
     Returns:
         List of active Account objects with decrypted fields.
     """
-    with _get_session(db_path) as session:
+    with config.SessionLocal() as session:
         accounts = (
             session.query(Account)
             .filter(Account.is_active.is_(True))
@@ -148,7 +132,6 @@ def list_accounts(
 
 
 def update_account(
-    db_path: str,
     encryption_key: bytes,
     account_id: str,
     **fields,
@@ -156,7 +139,6 @@ def update_account(
     """Update an account's fields. Sensitive fields are re-encrypted.
 
     Args:
-        db_path: Path to the SQLite database.
         encryption_key: Fernet key for encrypting/decrypting credentials.
         account_id: The account UUID.
         **fields: Fields to update (e.g., name="New Name", access_token="new_token").
@@ -164,8 +146,8 @@ def update_account(
     Returns:
         Updated Account with decrypted fields, or None if not found.
     """
-    with _get_session(db_path) as session:
-        account = session.get(Account, account_id)
+    with config.SessionLocal() as session:
+        account = session.get(Account, uuid.UUID(account_id) if isinstance(account_id, str) else account_id)
         if account is None:
             return None
 
@@ -181,15 +163,14 @@ def update_account(
     return _decrypt_account(account, encryption_key)
 
 
-def delete_account(db_path: str, account_id: str) -> None:
+def delete_account(account_id: str) -> None:
     """Soft-delete an account by setting is_active=False.
 
     Args:
-        db_path: Path to the SQLite database.
         account_id: The account UUID.
     """
-    with _get_session(db_path) as session:
-        account = session.get(Account, account_id)
+    with config.SessionLocal() as session:
+        account = session.get(Account, uuid.UUID(account_id) if isinstance(account_id, str) else account_id)
         if account:
             account.is_active = False
             session.commit()

@@ -15,7 +15,7 @@ The system has three phases:
 
 There is always a human approval gate between Phase 2 and Phase 3. Campaigns are always created with `status=PAUSED` and never auto-activated.
 
-**Multi-account support:** Multiple Meta Ad Accounts are stored in SQLite with encrypted credentials. Every pipeline run is scoped to a specific Account via `--account-id` (CLI) or account selector (UI). Credentials are encrypted at rest using Fernet symmetric encryption.
+**Multi-account support:** Multiple Meta Ad Accounts are stored in PostgreSQL with encrypted credentials. Every pipeline run is scoped to a specific Account via `--account-id` (CLI) or account selector (UI). Credentials are encrypted at rest using Fernet symmetric encryption.
 
 ---
 
@@ -49,10 +49,11 @@ metamind/                          # This folder (project root)
 │
 ├── storage/
 │   ├── __init__.py
-│   ├── logger.py                  # SQLAlchemy + SQLite logger for all runs
+│   ├── base.py                    # Shared SQLAlchemy DeclarativeBase
+│   ├── logger.py                  # SQLAlchemy logger for all runs
 │   ├── accounts.py                # Account model + CRUD (encrypted credentials)
 │   ├── encryption.py              # Fernet encrypt/decrypt functions
-│   └── migrations.py              # Startup migration (accounts table, account_id column)
+│   └── migrations.py              # Alembic migration runner (run_migrations())
 │
 ├── utils/
 │   ├── __init__.py
@@ -81,8 +82,14 @@ metamind/                          # This folder (project root)
 ├── .streamlit/
 │   └── config.toml                # Streamlit theme config (dark mode, primary color)
 │
-├── data/
-│   └── campaign_runs.db           # SQLite database (auto-created, never committed)
+├── alembic/
+│   ├── env.py                     # Alembic environment (imports Base, models, config)
+│   ├── script.py.mako             # Migration template
+│   └── versions/                  # Migration scripts
+│       ├── 0001_initial_schema.py
+│       └── 0002_legacy_data_backfill.py
+│
+├── alembic.ini                    # Alembic configuration
 │
 └── tests/
     ├── __init__.py
@@ -105,7 +112,9 @@ metamind/                          # This folder (project root)
 | Meta API | facebook-business (official SDK) |
 | AI | Anthropic Python SDK |
 | Data validation | Pydantic v2 |
-| Storage | SQLAlchemy + SQLite |
+| Database | PostgreSQL + psycopg2-binary |
+| ORM | SQLAlchemy 2.0+ |
+| Migrations | Alembic |
 | Encryption | cryptography (Fernet) |
 | Testing | pytest |
 | Linting | ruff |
@@ -119,10 +128,11 @@ All loaded in `config.py` via `python-dotenv`. See `.env` for the current values
 | Variable | Purpose |
 |---|---|
 | `ANTHROPIC_API_KEY` | Anthropic API key |
+| `DATABASE_URL` | PostgreSQL connection string (e.g., `postgresql://user:password@localhost:5432/metamind-dev-db`) |
 | `REQUIRE_HUMAN_APPROVAL` | `true` / `false` — gates execution after strategy |
 | `METAMIND_ENCRYPTION_KEY` | Fernet key for encrypting account credentials. Generate with `python main.py generate-key` |
 
-Meta credentials (`META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`, `META_APP_ID`, `META_APP_SECRET`, `META_PAGE_ID`) and `MAX_DAILY_BUDGET_USD` are now stored **per-account** in the SQLite database with sensitive fields encrypted. They are no longer environment variables. The Claude model is selected at runtime via `--model` flag (not an env var); the `ClaudeModel` enum in `models/campaign_config.py` defines available models.
+Meta credentials (`META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`, `META_APP_ID`, `META_APP_SECRET`, `META_PAGE_ID`) and `MAX_DAILY_BUDGET_USD` are now stored **per-account** in the PostgreSQL database with sensitive fields encrypted. They are no longer environment variables. The Claude model is selected at runtime via `--model` flag (not an env var); the `ClaudeModel` enum in `models/campaign_config.py` defines available models.
 
 **Critical:** `max_daily_budget_usd` is enforced in code in `phases/strategize.py` (passed as a parameter from the account), not by prompt. Never remove this check.
 
@@ -187,11 +197,11 @@ User runs: python main.py run --account-id <UUID> [args]
               │
               ▼
       config.check_setup()
-      Validate env vars (ANTHROPIC_API_KEY, ENCRYPTION_KEY)
+      Validate env vars (ANTHROPIC_API_KEY, DATABASE_URL, ENCRYPTION_KEY)
               │
               ▼
-      migrate(DB_PATH)
-      Run startup migrations
+      run_migrations()
+      Run Alembic migrations (upgrade to head)
               │
               ▼
       Load Account from DB (decrypt credentials)
@@ -216,7 +226,7 @@ User runs: python main.py run --account-id <UUID> [args]
     - Calls Anthropic API (claude-opus-4-6, temp=0)
     - Parses and validates JSON → CampaignConfig
     - Checks budget cap (account.max_daily_budget_usd)
-    - Logs to SQLite (with account_id)
+    - Logs to PostgreSQL (with account_id)
     → Returns CampaignConfig
               │
               ▼
@@ -235,7 +245,7 @@ User runs: python main.py run --account-id <UUID> [args]
         3. Create Ad Sets (status=PAUSED)
         4. Create Ad Creatives (using account.page_id)
         5. Create Ads (status=PAUSED)
-    - Logs all created IDs to SQLite
+    - Logs all created IDs to PostgreSQL
     - Prints Ads Manager link
 ```
 
@@ -249,9 +259,9 @@ User runs: python main.py run --account-id <UUID> [args]
 
 3. **Default to `--dry-run=True`.** Phase 3 must default to dry-run. A user must explicitly pass `--no-dry-run` to make real API calls.
 
-4. **Never store credentials in plaintext.** Account credentials are encrypted with Fernet in SQLite. `.env` is gitignored. Never hardcode tokens, app secrets, or API keys anywhere in source code.
+4. **Never store credentials in plaintext.** Account credentials are encrypted with Fernet in PostgreSQL. `.env` is gitignored. Never hardcode tokens, app secrets, or API keys anywhere in source code.
 
-5. **Log everything.** Every Claude response, every API call result, every run — logged to SQLite with `account_id`. Never skip logging even if execution fails.
+5. **Log everything.** Every Claude response, every API call result, every run — logged to PostgreSQL with `account_id`. Never skip logging even if execution fails.
 
 6. **Pydantic validation is the contract.** If `CampaignConfig` validation fails, raise an error. Never manually patch or coerce bad data to make it fit.
 
@@ -315,7 +325,8 @@ raw_text = response.content[0].text
 
 - **No real API calls in tests.** Everything is mocked. Use `pytest` + `unittest.mock`.
 - Tests live in `/tests/`. Run with `make test`.
-- `conftest.py` provides shared fixtures: `sample_ingested_data`, `sample_campaign_config`, `sample_campaign_config_dict`.
+- `conftest.py` provides shared fixtures: `sample_ingested_data`, `sample_campaign_config`, `sample_campaign_config_dict`, and an autouse `test_db` fixture that creates a test PostgreSQL database.
+- Tests require a PostgreSQL instance. Set `TEST_DATABASE_URL` env var (default: `postgresql://localhost:5432/metamind-test`).
 - Test the models thoroughly — they are the contract between Claude and the Meta API.
 - Test error paths: invalid JSON from Claude, budget cap exceeded, Meta API failure, decryption failure.
 
@@ -376,7 +387,7 @@ The Streamlit UI is an alternative to the CLI, providing the same pipeline throu
 - **Accounts** — Create, edit, and soft-delete Meta Ad Accounts. Sensitive fields (access token, app secret) are encrypted at rest. First page in navigation.
 - **New Campaign** — Account selector at top, then form with all `run` command parameters. Runs Phase 1 + 2 on submit, navigates to approval.
 - **Review & Approve** — Account selector, displays Claude's reasoning, campaign summary, and a JSON editor. State machine: idle → generated → approved/rejected. Approve triggers Phase 3.
-- **Run History** — Account selector with "show all accounts" toggle. Table of past runs from SQLite. Expand to see config, reasoning, execution log. "Optimize This Run" button navigates to optimize page.
+- **Run History** — Account selector with "show all accounts" toggle. Table of past runs from PostgreSQL. Expand to see config, reasoning, execution log. "Optimize This Run" button navigates to optimize page.
 - **Optimize** — Account selector, select a past run, set new budget/overrides, re-run Phase 1 + 2 with optimization context.
 
 **Account selector:** Reusable component in `ui/components/account_selector.py`. Persists selection in `st.session_state["mm_active_account_id"]`. Called at top of new_campaign, approval, history, and optimize pages.
@@ -421,13 +432,15 @@ Available on both `run` and `optimize` commands.
 
 ## Multi-Account Architecture
 
-**Storage:** Accounts are stored in the `accounts` table in the same SQLite database as run logs. Sensitive fields (`access_token`, `app_secret`) are encrypted with Fernet symmetric encryption. Plaintext fields (`ad_account_id`, `app_id`, `page_id`) are stored unencrypted.
+**Storage:** Accounts are stored in the `accounts` table in a PostgreSQL database alongside run logs. Sensitive fields (`access_token`, `app_secret`) are encrypted with Fernet symmetric encryption. Plaintext fields (`ad_account_id`, `app_id`, `page_id`) are stored unencrypted. UUID columns use PostgreSQL's native `UUID` type.
 
 **Encryption key:** A single Fernet key (`METAMIND_ENCRYPTION_KEY` in `.env`) encrypts/decrypts all account credentials. Generated via `python main.py generate-key`. Changing the key invalidates all stored credentials.
 
-**CRUD:** `storage/accounts.py` provides `create_account`, `get_account`, `list_accounts`, `update_account`, `delete_account`. All functions accept `db_path` and `encryption_key` as params (no global state). Returned accounts have sensitive fields already decrypted.
+**CRUD:** `storage/accounts.py` provides `create_account`, `get_account`, `list_accounts`, `update_account`, `delete_account`. Functions accept `encryption_key` as a param (database connection is centralized in `config.SessionLocal`). Returned accounts have sensitive fields already decrypted.
 
-**Migration:** `storage/migrations.py` runs on every startup (idempotent). Creates the `accounts` table, adds `account_id` column to `run_logs`, and backfills pre-existing rows with a Legacy placeholder account.
+**Migrations:** Managed by Alembic. `storage/migrations.py` provides `run_migrations()` which calls `alembic upgrade head`. Runs on every startup (idempotent). Schema changes should be made via `alembic revision --autogenerate -m "description"`.
+
+**Database config:** A single engine and session factory are created in `config.py` from `DATABASE_URL`. All storage functions use `config.SessionLocal()` for sessions — no per-function engine creation.
 
 **Pipeline scoping:** Every `run_logs` row has an `account_id` foreign key. History can be filtered by account. The `MetaClient` is constructed with account credentials at runtime.
 
@@ -447,6 +460,12 @@ Available on both `run` and `optimize` commands.
 - Update `prompts/system_prompt.txt` to reflect the new schema
 - Update this CLAUDE.md file
 - Run tests to confirm nothing breaks
+
+**When changing the database schema:**
+- Update the SQLAlchemy model in `storage/accounts.py` or `storage/logger.py`
+- Generate an Alembic migration: `alembic revision --autogenerate -m "description"`
+- Review the generated migration file in `alembic/versions/`
+- Test with `alembic upgrade head` against a dev database
 
 **When the Meta API changes:**
 - Update the pinned API version in `utils/meta_client.py`

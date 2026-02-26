@@ -64,12 +64,12 @@ class TestRunIngest:
         ]
         return client
 
-    def test_successful_ingest(self, tmp_path):
+    def test_successful_ingest(self):
         """Test successful data ingestion."""
         from storage.logger import RunLogger
 
         client = self._make_mock_client()
-        logger = RunLogger(db_path=str(tmp_path / "test.db"))
+        logger = RunLogger()
         run_id = logger.create_run()
 
         # Mock past_run_summaries
@@ -90,7 +90,7 @@ class TestRunIngest:
         client.get_ad_sets.assert_called_once()
         client.get_custom_audiences.assert_called_once()
 
-    def test_empty_data_handling(self, tmp_path):
+    def test_empty_data_handling(self):
         """Test ingestion when account has no historical data."""
         from storage.logger import RunLogger
 
@@ -99,7 +99,7 @@ class TestRunIngest:
         client.get_ad_sets.return_value = []
         client.get_custom_audiences.return_value = []
 
-        logger = RunLogger(db_path=str(tmp_path / "test.db"))
+        logger = RunLogger()
         run_id = logger.create_run()
         logger.get_past_run_summaries = MagicMock(return_value=[])
 
@@ -110,25 +110,25 @@ class TestRunIngest:
         assert len(result.ad_sets) == 0
         assert len(result.custom_audiences) == 0
 
-    def test_meta_api_error_propagates(self, tmp_path):
+    def test_meta_api_error_propagates(self):
         """Test that MetaAPIError from the client propagates."""
         from storage.logger import RunLogger
 
         client = MagicMock()
         client.get_account_info.side_effect = MetaAPIError("API failed")
 
-        logger = RunLogger(db_path=str(tmp_path / "test.db"))
+        logger = RunLogger()
         run_id = logger.create_run()
 
         with pytest.raises(MetaAPIError, match="API failed"):
             run_ingest(client, logger, run_id)
 
-    def test_ingested_data_logged(self, tmp_path):
+    def test_ingested_data_logged(self):
         """Test that ingested data is logged to the database."""
         from storage.logger import RunLogger
 
         client = self._make_mock_client()
-        logger = RunLogger(db_path=str(tmp_path / "test.db"))
+        logger = RunLogger()
         run_id = logger.create_run()
         logger.get_past_run_summaries = MagicMock(return_value=[])
 
