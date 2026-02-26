@@ -171,7 +171,7 @@ if approve_clicked:
         parsed = json.loads(edited_text)
         final_config = CampaignConfig.model_validate(parsed)
         set_config(final_config)
-    except (json.JSONDecodeError, Exception) as e:
+    except Exception as e:
         st.error(f"Cannot approve — JSON validation failed: {e}")
         st.stop()
 

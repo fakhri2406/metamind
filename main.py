@@ -204,7 +204,7 @@ def _edit_config(campaign_config: CampaignConfig) -> Optional[CampaignConfig]:
             edited_json = f.read()
         edited_data = json.loads(edited_json)
         return CampaignConfig.model_validate(edited_data)
-    except (subprocess.CalledProcessError, json.JSONDecodeError, Exception) as e:
+    except Exception as e:
         console.print(f"[red]Error processing edited config: {e}[/red]")
         return None
     finally:
@@ -425,6 +425,36 @@ def run(
         raise typer.Exit(code=1)
 
 
+def _format_history_row(r) -> list[str]:
+    """Format a RunLog into a list of column values for the history table."""
+    date_str = r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "-"
+    budget_str = f"${r.budget_daily_usd:.2f}" if r.budget_daily_usd else "-"
+
+    if r.approved:
+        approved_str = "Yes"
+    elif r.approved is False:
+        approved_str = "No"
+    else:
+        approved_str = "-"
+
+    if r.created_campaign_id:
+        executed_str = "Yes"
+    elif r.dry_run:
+        executed_str = "Dry"
+    else:
+        executed_str = "-"
+
+    return [
+        str(r.run_id),
+        date_str,
+        r.campaign_name or "-",
+        r.objective or "-",
+        budget_str,
+        approved_str,
+        executed_str,
+    ]
+
+
 @app.command()
 def history(
     account_id: Optional[str] = typer.Option(None, "--account-id", help="Filter by account UUID"),
@@ -449,15 +479,7 @@ def history(
     table.add_column("Executed", style="red")
 
     for r in runs:
-        table.add_row(
-            str(r.run_id),
-            r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "-",
-            r.campaign_name or "-",
-            r.objective or "-",
-            f"${r.budget_daily_usd:.2f}" if r.budget_daily_usd else "-",
-            "Yes" if r.approved else ("No" if r.approved is False else "-"),
-            "Yes" if r.created_campaign_id else ("Dry" if r.dry_run else "-"),
-        )
+        table.add_row(*_format_history_row(r))
 
     console.print(table)
 

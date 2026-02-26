@@ -4,7 +4,43 @@ from __future__ import annotations
 
 import streamlit as st
 
-from models.campaign_config import CampaignConfig
+from models.campaign_config import AdSetSpec, AdSpec, CampaignConfig
+
+
+def _render_ad_set(ad_set: AdSetSpec) -> None:
+    """Render a single ad set's details inside an expander."""
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f"**Targeting:** {ad_set.targeting_type.value}")
+        st.markdown(f"**Ages:** {ad_set.age_min}–{ad_set.age_max}")
+        genders = ", ".join(g.value for g in ad_set.genders)
+        st.markdown(f"**Genders:** {genders}")
+        if ad_set.interests:
+            st.markdown(f"**Interests:** {', '.join(ad_set.interests)}")
+    with col2:
+        st.markdown(f"**Placements:** {ad_set.placements.value}")
+        st.markdown(f"**Bid Strategy:** {ad_set.bid_strategy.value}")
+        if ad_set.bid_amount_usd is not None:
+            st.markdown(f"**Bid Amount:** ${ad_set.bid_amount_usd:.2f}")
+        if ad_set.daily_budget_usd is not None:
+            st.markdown(f"**Daily Budget:** ${ad_set.daily_budget_usd:.2f}")
+        if ad_set.lookalike_source:
+            st.markdown(f"**Lookalike Source:** {ad_set.lookalike_source}")
+
+
+def _render_ad(ad: AdSpec) -> None:
+    """Render a single ad's details inside a nested card."""
+    st.markdown('<div class="mm-nested-card">', unsafe_allow_html=True)
+    st.markdown(f"**Ad: {ad.name}**")
+    st.markdown(f"Format: `{ad.format.value}` | CTA: `{ad.cta.value}`")
+    st.markdown(f"**Headline:** {ad.headline}")
+    st.markdown(f"**Primary Text:** {ad.primary_text}")
+    if ad.description:
+        st.markdown(f"**Description:** {ad.description}")
+    st.markdown(f"**URL:** {ad.destination_url}")
+    if ad.creative_notes:
+        st.caption(f"Creative notes: {ad.creative_notes}")
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_config_summary(config: CampaignConfig) -> None:
@@ -34,35 +70,6 @@ def render_config_summary(config: CampaignConfig) -> None:
     st.markdown('<div class="mm-section-header">Ad Sets & Ads</div>', unsafe_allow_html=True)
     for ad_set in config.ad_sets:
         with st.expander(f"Ad Set: {ad_set.name}", expanded=False):
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown(f"**Targeting:** {ad_set.targeting_type.value}")
-                st.markdown(f"**Ages:** {ad_set.age_min}–{ad_set.age_max}")
-                genders = ", ".join(g.value for g in ad_set.genders)
-                st.markdown(f"**Genders:** {genders}")
-                if ad_set.interests:
-                    st.markdown(f"**Interests:** {', '.join(ad_set.interests)}")
-            with col2:
-                st.markdown(f"**Placements:** {ad_set.placements.value}")
-                st.markdown(f"**Bid Strategy:** {ad_set.bid_strategy.value}")
-                if ad_set.bid_amount_usd is not None:
-                    st.markdown(f"**Bid Amount:** ${ad_set.bid_amount_usd:.2f}")
-                if ad_set.daily_budget_usd is not None:
-                    st.markdown(f"**Daily Budget:** ${ad_set.daily_budget_usd:.2f}")
-                if ad_set.lookalike_source:
-                    st.markdown(f"**Lookalike Source:** {ad_set.lookalike_source}")
-
-            # Nested ads
-            ads = ads_by_set.get(ad_set.name, [])
-            for ad in ads:
-                st.markdown('<div class="mm-nested-card">', unsafe_allow_html=True)
-                st.markdown(f"**Ad: {ad.name}**")
-                st.markdown(f"Format: `{ad.format.value}` | CTA: `{ad.cta.value}`")
-                st.markdown(f"**Headline:** {ad.headline}")
-                st.markdown(f"**Primary Text:** {ad.primary_text}")
-                if ad.description:
-                    st.markdown(f"**Description:** {ad.description}")
-                st.markdown(f"**URL:** {ad.destination_url}")
-                if ad.creative_notes:
-                    st.caption(f"Creative notes: {ad.creative_notes}")
-                st.markdown("</div>", unsafe_allow_html=True)
+            _render_ad_set(ad_set)
+            for ad in ads_by_set.get(ad_set.name, []):
+                _render_ad(ad)

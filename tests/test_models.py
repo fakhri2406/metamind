@@ -127,7 +127,7 @@ class TestAdSetSpec:
             bid_strategy=BidStrategy.COST_CAP,
             bid_amount_usd=5.0,
         )
-        assert spec.bid_amount_usd == 5.0
+        assert spec.bid_amount_usd == pytest.approx(5.0)
 
     def test_lookalike_requires_source(self):
         with pytest.raises(ValidationError, match="lookalike_source.*required"):

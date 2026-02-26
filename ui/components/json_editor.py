@@ -24,7 +24,7 @@ def render_json_editor() -> None:
         label_visibility="collapsed",
     )
 
-    col1, col2 = st.columns([1, 4])
+    col1, _ = st.columns([1, 4])
     with col1:
         validate_clicked = st.button("Validate JSON", type="secondary")
 

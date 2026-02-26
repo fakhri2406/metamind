@@ -80,7 +80,7 @@ class TestAccountCRUD:
         assert sample_account.app_id == "1234567890"
         assert sample_account.app_secret == "abc123secret"
         assert sample_account.page_id == "9876543210"
-        assert sample_account.max_daily_budget_usd == 500.0
+        assert sample_account.max_daily_budget_usd == pytest.approx(500.0)
         assert sample_account.is_active is True
         assert sample_account.id is not None
 
@@ -119,7 +119,7 @@ class TestAccountCRUD:
         )
         assert updated is not None
         assert updated.name == "Updated Name"
-        assert updated.max_daily_budget_usd == 1000.0
+        assert updated.max_daily_budget_usd == pytest.approx(1000.0)
         # Unchanged fields preserved
         assert updated.access_token == "EAABsbCS1IEBAZ..."
         assert updated.ad_account_id == "act_123456789"

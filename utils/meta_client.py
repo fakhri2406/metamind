@@ -21,6 +21,37 @@ _MAX_RETRIES = 3
 _RETRYABLE_ERROR_CODES = {17, 80004}
 
 
+_CONVERSION_ACTION_TYPES = {
+    "offsite_conversion.fb_pixel_purchase",
+    "offsite_conversion.fb_pixel_lead",
+    "lead",
+    "purchase",
+}
+_CONVERSION_VALUE_ACTION_TYPES = {
+    "offsite_conversion.fb_pixel_purchase",
+    "purchase",
+}
+
+
+def _extract_conversions(row: dict[str, Any]) -> tuple[int, float]:
+    """Extract conversion count and value from a Meta insights row.
+
+    Returns:
+        Tuple of (conversions, conversion_value).
+    """
+    conversions = 0
+    for action in row.get("actions", []):
+        if action.get("action_type") in _CONVERSION_ACTION_TYPES:
+            conversions += int(action.get("value", 0))
+
+    conversion_value = 0.0
+    for av in row.get("action_values", []):
+        if av.get("action_type") in _CONVERSION_VALUE_ACTION_TYPES:
+            conversion_value += float(av.get("value", 0))
+
+    return conversions, conversion_value
+
+
 class MetaClient:
     """Wrapper around the Meta Marketing API with automatic retry on rate limits."""
 
@@ -127,23 +158,7 @@ class MetaClient:
         )
         campaigns = []
         for row in insights:
-            conversions = 0
-            conversion_value = 0.0
-            for action in row.get("actions", []):
-                if action.get("action_type") in (
-                        "offsite_conversion.fb_pixel_purchase",
-                        "offsite_conversion.fb_pixel_lead",
-                        "lead",
-                        "purchase",
-                ):
-                    conversions += int(action.get("value", 0))
-            for av in row.get("action_values", []):
-                if av.get("action_type") in (
-                        "offsite_conversion.fb_pixel_purchase",
-                        "purchase",
-                ):
-                    conversion_value += float(av.get("value", 0))
-
+            conversions, conversion_value = _extract_conversions(row)
             spend = float(row.get("spend", 0))
             roas = conversion_value / spend if spend > 0 else None
 
@@ -188,23 +203,7 @@ class MetaClient:
         )
         ad_sets = []
         for row in insights:
-            conversions = 0
-            conversion_value = 0.0
-            for action in row.get("actions", []):
-                if action.get("action_type") in (
-                        "offsite_conversion.fb_pixel_purchase",
-                        "offsite_conversion.fb_pixel_lead",
-                        "lead",
-                        "purchase",
-                ):
-                    conversions += int(action.get("value", 0))
-            for av in row.get("action_values", []):
-                if av.get("action_type") in (
-                        "offsite_conversion.fb_pixel_purchase",
-                        "purchase",
-                ):
-                    conversion_value += float(av.get("value", 0))
-
+            conversions, conversion_value = _extract_conversions(row)
             ad_sets.append({
                 "ad_set_id": row.get("adset_id", ""),
                 "ad_set_name": row.get("adset_name", ""),

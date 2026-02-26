@@ -57,7 +57,7 @@ class RunLogger:
     """Logger for pipeline runs backed by PostgreSQL."""
 
     def __init__(self) -> None:
-        pass
+        """Initialize RunLogger. Sessions are created on demand via config.SessionLocal."""
 
     def _session(self) -> Session:
         return config.SessionLocal()
