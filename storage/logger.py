@@ -14,6 +14,11 @@ from models.meta_data import PastRunSummary
 from storage.base import Base
 
 
+def _to_uuid(value) -> uuid.UUID:
+    """Coerce a string or UUID to a UUID object."""
+    return value if isinstance(value, uuid.UUID) else uuid.UUID(value)
+
+
 class RunLog(Base):
     """Database model for a single pipeline run."""
 
@@ -67,7 +72,7 @@ class RunLogger:
         with self._session() as session:
             session.add(RunLog(
                 run_id=run_id,
-                account_id=uuid.UUID(account_id) if account_id else None,
+                account_id=_to_uuid(account_id) if account_id else None,
             ))
             session.commit()
         return str(run_id)
@@ -75,7 +80,7 @@ class RunLogger:
     def log_ingested_data(self, run_id: str, data_json: str) -> None:
         """Log Phase 1 ingested data."""
         with self._session() as session:
-            run = session.get(RunLog, uuid.UUID(run_id))
+            run = session.get(RunLog, _to_uuid(run_id))
             if run:
                 run.ingested_data_json = data_json
                 session.commit()
@@ -94,7 +99,7 @@ class RunLogger:
     ) -> None:
         """Log Phase 2 strategy results."""
         with self._session() as session:
-            run = session.get(RunLog, uuid.UUID(run_id))
+            run = session.get(RunLog, _to_uuid(run_id))
             if run:
                 if model is not None:
                     run.model = model
@@ -110,7 +115,7 @@ class RunLogger:
     def log_approval(self, run_id: str, approved: bool) -> None:
         """Log the human approval decision."""
         with self._session() as session:
-            run = session.get(RunLog, uuid.UUID(run_id))
+            run = session.get(RunLog, _to_uuid(run_id))
             if run:
                 run.approved = approved
                 run.approval_timestamp = datetime.now(timezone.utc)
@@ -127,7 +132,7 @@ class RunLogger:
     ) -> None:
         """Log Phase 3 execution results."""
         with self._session() as session:
-            run = session.get(RunLog, uuid.UUID(run_id))
+            run = session.get(RunLog, _to_uuid(run_id))
             if run:
                 run.dry_run = dry_run
                 run.created_campaign_id = campaign_id
@@ -139,7 +144,7 @@ class RunLogger:
     def get_run(self, run_id: str) -> Optional[RunLog]:
         """Fetch a single run by ID."""
         with self._session() as session:
-            run = session.get(RunLog, uuid.UUID(run_id))
+            run = session.get(RunLog, _to_uuid(run_id))
             if run:
                 session.expunge(run)
             return run
@@ -153,7 +158,7 @@ class RunLogger:
         with self._session() as session:
             query = session.query(RunLog)
             if account_id is not None:
-                query = query.filter(RunLog.account_id == uuid.UUID(account_id))
+                query = query.filter(RunLog.account_id == _to_uuid(account_id))
             runs = query.order_by(RunLog.created_at.desc()).all()
             for run in runs:
                 session.expunge(run)
@@ -171,7 +176,7 @@ class RunLogger:
                 .filter(RunLog.campaign_config_json.isnot(None))
             )
             if account_id is not None:
-                query = query.filter(RunLog.account_id == uuid.UUID(account_id))
+                query = query.filter(RunLog.account_id == _to_uuid(account_id))
             runs = (
                 query.order_by(RunLog.created_at.desc())
                 .limit(10)

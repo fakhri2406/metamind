@@ -12,6 +12,11 @@ from storage.base import Base
 from storage.encryption import decrypt, encrypt
 
 
+def _to_uuid(value) -> uuid.UUID:
+    """Coerce a string or UUID to a UUID object."""
+    return value if isinstance(value, uuid.UUID) else uuid.UUID(value)
+
+
 class Account(Base):
     """Database model for a Meta Ad Account."""
 
@@ -99,7 +104,7 @@ def get_account(
         Account with decrypted fields, or None if not found.
     """
     with config.SessionLocal() as session:
-        account = session.get(Account, uuid.UUID(account_id) if isinstance(account_id, str) else account_id)
+        account = session.get(Account, _to_uuid(account_id))
         if account is None:
             return None
         session.expunge(account)
@@ -147,7 +152,7 @@ def update_account(
         Updated Account with decrypted fields, or None if not found.
     """
     with config.SessionLocal() as session:
-        account = session.get(Account, uuid.UUID(account_id) if isinstance(account_id, str) else account_id)
+        account = session.get(Account, _to_uuid(account_id))
         if account is None:
             return None
 
@@ -170,7 +175,7 @@ def delete_account(account_id: str) -> None:
         account_id: The account UUID.
     """
     with config.SessionLocal() as session:
-        account = session.get(Account, uuid.UUID(account_id) if isinstance(account_id, str) else account_id)
+        account = session.get(Account, _to_uuid(account_id))
         if account:
             account.is_active = False
             session.commit()
